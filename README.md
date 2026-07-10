@@ -65,7 +65,6 @@ python3 verify.py          # -> prints PASS/FAIL on the conservation checks
 
 ## Important caveat about "verifying the results"
 
-You confirmed the **raw experimental tracer time series are not available**.
 The published R² values (Table 3) compare the model to those measurements, so
 they cannot be recomputed here. What this code does instead is a **forward
 simulation** with the paper's calibrated parameters, reproducing the *model*
