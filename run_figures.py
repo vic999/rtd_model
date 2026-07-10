@@ -103,9 +103,20 @@ def make_figure3():
     axes = axes.ravel()
     for ax, (title, kw) in zip(axes, FIG3):
         t, uv, cond = simulate_pulse(**kw)
-        ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (V_I..)")
+
+        # Save the line objects returned by plot (note the commas)
+        ln1, = ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (V_I..)")
+
         ax2 = ax.twinx()
-        ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond.")
+        ln2, = ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond.")
+
+        # Combine the lines and labels from both axes
+        lns = [ln1, ln2]
+        labs = [l.get_label() for l in lns]
+
+        # Draw a single, combined legend on the main axis
+        ax.legend(lns, labs, loc="upper right", fontsize=8)
+
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("Time / s", fontsize=8)
         ax.set_ylabel("norm. tracer", fontsize=8, color="#1f6fb2")
@@ -116,7 +127,7 @@ def make_figure3():
                  "forward simulation with l=3, eta=0.13, alpha=1.14, dcmax=2.17e-7",
                  fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    out = os.path.join(HERE, "figure3_calibration.png")
+    out = os.path.join(HERE, "figure3.png")
     fig.savefig(out, dpi=130)
     print("wrote", out)
 
@@ -126,9 +137,21 @@ def make_figure4():
     axes = axes.ravel()
     for ax, (title, kw) in zip(axes, FIG4):
         t, uv, cond = simulate_step(**kw)
-        ax.plot(t, uv, color="#1f6fb2", lw=2)
+
+        # Save the line objects returned by plot (note the commas)
+        ln1, = ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (V_I..)")
+
         ax2 = ax.twinx()
-        ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--")
+        ln2, = ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond.")
+
+        # Combine the lines and labels from both axes
+        lns = [ln1, ln2]
+        labs = [l.get_label() for l in lns]
+
+        # Draw a single, combined legend on the main axis
+        ax.legend(lns, labs, loc="upper right", fontsize=8)
+
+
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("Time / s", fontsize=8)
         ax.set_ylabel("norm. tracer", fontsize=8, color="#1f6fb2")
@@ -139,7 +162,7 @@ def make_figure4():
                  "start-up plateau + wash-out, forward simulation",
                  fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    out = os.path.join(HERE, "figure4_validation.png")
+    out = os.path.join(HERE, "figure4.png")
     fig.savefig(out, dpi=130)
     print("wrote", out)
 
