@@ -68,6 +68,50 @@ python3 run_figures.py     # -> figure3_calibration.png, figure4_validation.png
 python3 verify.py          # -> prints PASS/FAIL on the conservation checks
 ```
 
+## Validation against real instrument data
+
+`compare_data.py` compares the model against a real ÄKTA UNICORN export
+(`20230208_260Microliters0.5MPulseson50mMNaNO3Transition_FDM 002.csv`) — a
+combined stepwise + pulse run (260 µL / 0.5 M NaNO₃ pulse on a 50 mM NaNO₃
+transition, 1 mL/min).
+
+```bash
+python3 compare_data.py            # uses the bundled CSV, or pass a path
+```
+
+What it does:
+
+1. `rtd/data.py` parses the interleaved UV / conductivity / flow curves and
+   resamples them onto a common time grid (s).
+2. The two independent inputs are reconstructed — a **gradient ramp** for the
+   buffer transition and a **rectangular 260 µL pulse** — and each is propagated
+   through a candidate train to give basis response shapes.
+3. Each detector is fit as `signal = a·(transition response) + b·(pulse
+   response) + c` by least squares: `a, b, c` are the Beer / Kohlrausch
+   calibration constants (units + baseline), so **shape agreement is what R²
+   measures**, not amplitude.
+4. It repeats for bypass / connector / 3·10·100 cm² filter and reports which
+   reproduces the data best.
+
+**Result on the supplied file:** the run is a **no-filter** configuration —
+bypass and connector both give R² ≈ 0.87 (UV and conductivity), while every
+filter configuration fits markedly worse (0.47–0.73). This is consistent with
+the paper's C-series connector/bypass experiments at 1 mL/min.
+
+Two honest observations, both visible in `data_comparison.png`:
+
+- The buffer transition in the data is a **programmed gradient** (a slow ramp),
+  not a step, so it is driven by the pump programme and only weakly probes the
+  RTD. It is modelled as a ramp for context.
+- The **pulse** is the genuine RTD test, and the measured pulse is **broader and
+  more tailed** than the ideal model with published parameters predicts. This is
+  the exact small-scale tailing limitation the authors themselves report for
+  these experiments ("experimental profiles revealed more pronounced tailing
+  that did not fully match the simulated signals… dominating at very small
+  scale"). Closing that gap to the paper's ~0.96 needs the **inverse
+  calibration** (Eq. 10) — fitting the dispersion / mixing parameters to this
+  data rather than using the published values — plus the pump-ramp refinement.
+
 ## Important caveat about "verifying the results"
 
 The published R² values (Table 3) compare the model to those measurements, so
