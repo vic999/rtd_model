@@ -33,6 +33,11 @@ space `V_O` is a **radial tanks-in-series cascade** of `l` stages, each an
 dead-zone tank `k2` coupled at flow ratio `η`), with a film-resistance term that
 makes the through-flow volume fraction `ε` time-dependent.
 
+> **How each equation is actually discretized and integrated is documented in
+> [`docs/NUMERICS.md`](docs/NUMERICS.md)** — spatial schemes, boundary-condition
+> handling, the BDF time integrator, the `max_step` logic, and how the units are
+> chained.
+
 Calibrated parameters from the paper are the defaults:
 
 ```
