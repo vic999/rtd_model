@@ -53,27 +53,57 @@ UV_ANTIBODY = 90.0     # mAU per (g/L) IgG at 280 nm  (illustrative)
 COND_ANTIBODY = 0.5    # mS/cm per (g/L)              (illustrative, small)
 
 SPECIES_UV = {"NaNO3": UV_NANO3, "buffer": UV_BUFFER, "antibody": UV_ANTIBODY}
-SPECIES_COND = {"NaNO3": COND_NANO3, "buffer": COND_BUFFER, "antibody": COND_ANTIBODY}
+
+# --- concentration-dependent conductivity for NaNO3 -----------------------
+# Kohlrausch's law of the independent migration of ions is only linear in the
+# dilute limit; the molar conductivity FALLS with concentration
+# (Lambda_m(c) = Lambda_0 - K*sqrt(c), Kohlrausch's square-root law).  A linear
+# model over-estimates 0.1 M NaNO3 (-> above the buffer -> conductivity rises,
+# an "n"), whereas physically 0.1 M is still below the buffer (-> a shallow "U"
+# like the paper).  Parameters below give ~5.6 mS/cm at 0.05 M and ~10.3 at
+# 0.1 M (both < the 11.9 buffer) and ~33 at 0.5 M.  Illustrative; see
+# docs/PARAMETERS.md.
+COND_NANO3_L0 = 134.0   # limiting molar conductivity, mS.cm2 per (mol/L)-ish
+COND_NANO3_K = 97.0     # Kohlrausch slope
 
 
-def _species_coeffs(names, table, kind):
-    missing = [n for n in names if n not in table]
-    if missing:
-        raise KeyError(f"no {kind} coefficient for species {missing}; "
-                       f"known: {sorted(table)}")
-    return {n: table[n] for n in names}
+def cond_nano3(c):
+    """NaNO3 conductivity (mS/cm) vs concentration (mol/L), Kohlrausch sqrt-law."""
+    c = np.clip(np.asarray(c, float), 0.0, None)
+    return c * (COND_NANO3_L0 - COND_NANO3_K * np.sqrt(c))
+
+
+# Per-species conductivity as callables conc(mol/L or g/L) -> mS/cm.
+SPECIES_COND_FN = {
+    "NaNO3": cond_nano3,                                   # nonlinear
+    "buffer": lambda c: COND_BUFFER * np.asarray(c, float),
+    "antibody": lambda c: COND_ANTIBODY * np.asarray(c, float),
+}
 
 
 def uv_from_species(conc_by_species, baseline=0.0):
     """UV (mAU) from a {species: concentration} dict, per-species Beer's law."""
-    coeffs = _species_coeffs(conc_by_species.keys(), SPECIES_UV, "UV")
+    missing = [n for n in conc_by_species if n not in SPECIES_UV]
+    if missing:
+        raise KeyError(f"no UV coefficient for species {missing}; "
+                       f"known: {sorted(SPECIES_UV)}")
+    coeffs = {n: SPECIES_UV[n] for n in conc_by_species}
     return beer_uv(conc_by_species, eps=coeffs, baseline=baseline)
 
 
 def cond_from_species(conc_by_species, baseline=0.0):
-    """Conductivity (mS/cm) from a {species: concentration} dict (Kohlrausch)."""
-    coeffs = _species_coeffs(conc_by_species.keys(), SPECIES_COND, "conductivity")
-    return kohlrausch_cond(conc_by_species, Lambda=coeffs, baseline=baseline)
+    """Conductivity (mS/cm) from a {species: concentration} dict.
+
+    Per-species conductivity models are summed (Kohlrausch); NaNO3 uses the
+    concentration-dependent form, other species a linear coefficient."""
+    missing = [n for n in conc_by_species if n not in SPECIES_COND_FN]
+    if missing:
+        raise KeyError(f"no conductivity model for species {missing}; "
+                       f"known: {sorted(SPECIES_COND_FN)}")
+    total = np.asarray(baseline, float)
+    for name, c in conc_by_species.items():
+        total = total + SPECIES_COND_FN[name](c)
+    return total
 
 
 def _combine(concentrations, coeffs):

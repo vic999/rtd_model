@@ -109,16 +109,25 @@ def test_config_loads_and_has_series():
     assert any(e.figure == 4 for e in exps)
 
 
-def test_single_species_backward_compatible():
+def test_single_species_detectors_track():
     from rtd.experiments import Experiment, simulate
     exp = Experiment(name="_", kind="pulse", connection="bypass", flow=1.0)
     r = simulate(exp, n_time=1200)
     t, uv, cond = r["t"], r["uv_mAU"], r["cond_mScm"]
-    # single NaNO3 tracer: the two detectors see the same conserved tracer, so
-    # the ratio of the areas equals the ratio of the molar coefficients
-    # (independent of the small U9-D -> C9 transport delay).
-    ratio = trapezoid(cond, t) / trapezoid(uv, t)
-    assert abs(ratio - COND_NANO3 / UV_NANO3) < 0.02
+    # A single NaNO3 tracer drives both detectors through monotonic maps (UV
+    # linear, conductivity Kohlrausch), so both peak at ~the same time (within
+    # the small U9-D -> C9 monitor delay) and return to baseline.
+    assert abs(t[uv.argmax()] - t[cond.argmax()]) < 8.0
+    assert uv[-1] < 0.05 * uv.max() and cond[-1] < 0.05 * cond.max()
+
+
+def test_nano3_conductivity_below_buffer():
+    # Kohlrausch sqrt-law: 0.05 and 0.1 M NaNO3 are both < the 11.9 buffer, so
+    # a step gives a conductivity "U" (dip), not an "n" (rise).
+    from rtd.detectors import cond_nano3, COND_BUFFER
+    assert cond_nano3(0.05) < COND_BUFFER
+    assert cond_nano3(0.10) < COND_BUFFER
+    assert cond_nano3(0.10) > cond_nano3(0.05)     # still monotonic increasing
 
 
 def test_multicomponent_opposite_sign():

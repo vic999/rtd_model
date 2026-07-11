@@ -110,7 +110,7 @@ class Species:
                         (e.g. an equilibration buffer that is displaced);
       * ``step``     -- concentration during the step "on" window;
       * ``pulse``    -- a bolus of this concentration injected during steady state.
-    ``name`` must match a key in ``detectors.SPECIES_UV`` / ``SPECIES_COND``.
+    ``name`` must match a key in ``detectors.SPECIES_UV`` / ``SPECIES_COND_FN``.
     """
     name: str
     baseline: float = 0.0

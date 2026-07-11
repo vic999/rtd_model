@@ -126,14 +126,23 @@ class RampWithDips(FlowProfile):
     triangular notch of full width ``dip_width``) at each valve-switch / tracer
     event -- the paper's localized "saw-tooth at high flow", rather than a
     continuous oscillation.
+
+    ``events`` may be plain times (each dips to ``dip_to``) or ``(time, depth)``
+    pairs giving a per-event bottom flow -- e.g. a pulse that only interrupts
+    the flow partway rather than to zero.
     """
 
     def __init__(self, setpoint, lag=6.0, events=(), dip_to=0.0,
                  dip_width=6.0, t_start=0.0):
         self.sp = float(setpoint)
         self.lag = float(max(lag, 1e-9))
-        self.events = [float(e) for e in events]
         self.dip_to = float(dip_to)
+        self.events = []                              # list of (time, depth)
+        for e in events:
+            if isinstance(e, (tuple, list)):
+                self.events.append((float(e[0]), float(e[1])))
+            else:
+                self.events.append((float(e), self.dip_to))
         self.half = float(max(dip_width, 1e-9)) / 2.0
         self.t_start = float(t_start)
 
@@ -141,10 +150,10 @@ class RampWithDips(FlowProfile):
         t = np.asarray(t, float)
         # start-up ramp 0 -> set-point over `lag`
         v = self.sp * np.clip((t - self.t_start) / self.lag, 0.0, 1.0)
-        # triangular dip toward dip_to at each event (frac=1 at centre, 0 at edge)
-        for te in self.events:
+        # triangular dip toward each event's depth (frac=1 at centre, 0 at edge)
+        for te, depth in self.events:
             frac = np.clip(1.0 - np.abs(t - te) / self.half, 0.0, 1.0)
-            v = v * (1.0 - frac) + self.dip_to * frac
+            v = v * (1.0 - frac) + depth * frac
         return v if t.ndim else float(v)
 
 

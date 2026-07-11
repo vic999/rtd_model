@@ -42,6 +42,7 @@ a detector conversion is applied.
 | `UV_NANO3` | 430 | mAU per (mol/L) | nitrate UV₂₈₀ response (Beer, Eq. 11) | **Illustrative calibration** — chosen to give paper-like magnitudes (tens–hundreds of mAU); scales magnitude only, not shape. Re-fit for quantitative UV. |
 | UV path length | 2 | mm | UV monitor path length (folded into `UV_NANO3` here) | paper, Sec. 2.2.5 |
 | cond. baseline | 0 | mS/cm | buffer background added to conductivity in the figures | illustrative (`rtd.experiments.COND_BASELINE`) |
+| `COND_NANO3_L0`, `COND_NANO3_K` | 134, 97 | mS·cm²/mol-ish | NaNO₃ conductivity via Kohlrausch √c law `κ = c(Λ₀−K√c)` (`cond_nano3`) | **illustrative** — 0.05 M→5.6, 0.1 M→10.3, 0.5 M→33 mS/cm (both dilute values below the 11.9 buffer → "U") |
 | `COND_BUFFER` | 11.9 | mS/cm per (unit) | tris-acetate buffer conductivity (multi-component, #2) | **illustrative** — set to the measured ~11.9 baseline |
 | `UV_BUFFER` | 0 | mAU per (unit) | tris-acetate UV₂₈₀ (≈none) | physically ~0 |
 | `UV_ANTIBODY` | 90 | mAU per (g/L) | IgG UV₂₈₀ response | **illustrative** |

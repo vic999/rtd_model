@@ -148,8 +148,8 @@ experiments:
     description: "bypass, 0.1 M, 10 mL/min"
     timing:
       t_on: 10
-      t_off: 255
-      t_end: 300
+      t_off: 90
+      t_end: 115
 
   # V5 -- combined 0.05 M step + 0.5 M pulse, bypass, 10 mL/min
   #       (buffer explicit so conductivity dips into a "U" then the pulse spikes;
@@ -163,8 +163,8 @@ experiments:
     timing:
       t_on: 10
       t_off: 255
-      t_end: 300
-      t_pulse: 130
+      t_end: 480
+      t_pulse: 260
     species:
       - name: buffer
         baseline: 1.0

@@ -107,11 +107,16 @@ UV-transparent). It costs **no extra ODE solve**: through the linear train the
 displaced buffer is exactly the complement of the NaNO₃ step,
 `c_buffer = baseline·(1 − c_NaNO₃/c_step)`, and for a pulse it is a constant.
 
-**0.1 M caveat.** Kohlrausch's law is linear here, so 0.1 M NaNO₃ evaluates to
-~12.2 mS/cm — essentially equal to the buffer — and the V3/V4 conductivity shows
-only a small change rather than a deep U. Real molar conductivity falls with
-concentration, so 0.1 M would sit a little below the buffer; capturing that
-needs a concentration-dependent conductivity (not currently modelled).
+### Concentration-dependent NaNO₃ conductivity
+
+NaNO₃ conductivity uses **Kohlrausch's square-root law**
+(`κ = c·(Λ₀ − K·√c)`, `rtd.detectors.cond_nano3`), not a single linear
+coefficient. This matters at 0.1 M: a *linear* model over-estimates it (~12.2
+mS/cm, *above* the 11.9 buffer → conductivity would rise, an inverted "n"),
+whereas the √c law gives ~10.3 mS/cm (*below* the buffer → a shallow **U**, as
+in the paper). Calibrated to ~5.6 mS/cm at 0.05 M, ~10.3 at 0.1 M, ~33 at 0.5 M
+(illustrative; see `docs/PARAMETERS.md`). Buffer and antibody conductivities
+remain linear.
 
 ## Full experiment set (Table 2)
 
