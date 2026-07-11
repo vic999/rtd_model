@@ -110,6 +110,16 @@ class Experiment:
         return any(s.step for s in self.species_list())
 
     @property
+    def display_kind(self) -> str:
+        """Human-readable kind derived from the species (step/pulse/combo)."""
+        sl = self.species_list()
+        has_s = any(s.step for s in sl)
+        has_p = any(s.pulse for s in sl)
+        if has_s and has_p:
+            return "combo"
+        return "step" if has_s else "pulse"
+
+    @property
     def injection_node(self) -> str:
         if self.inject_at:
             return self.inject_at

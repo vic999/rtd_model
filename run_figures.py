@@ -34,7 +34,17 @@ def _make_figure(figure_no, suptitle, outfile, style=None, focus=None):
     focus = FOCUS_ENABLED if focus is None else focus
     experiments, _defaults = load_config()
     exps = [e for e in experiments if e.figure == figure_no]
-    pairs = [(e, simulate(e)) for e in exps]
+    # Grid panels are small, so a lighter simulation (coarser DPF mesh, shorter
+    # wash-out window, fewer samples) keeps whole-figure generation fast without
+    # visible loss.  (Per-experiment `rtd_cli.py plot/csv` use full resolution.)
+    import rtd.units as _U
+    old_cells = _U.DPF_N_CELLS
+    _U.DPF_N_CELLS = 20
+    try:
+        pairs = [(e, simulate(e, n_time=900, pulse_span=1.5, step_span=1.8))
+                 for e in exps]
+    finally:
+        _U.DPF_N_CELLS = old_cells
     out = os.path.join(HERE, outfile)
     plot_grid(pairs, suptitle, out, style=style, focus=focus)
     print("wrote", out)

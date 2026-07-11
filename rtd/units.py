@@ -73,6 +73,12 @@ USE_NUMBA = HAVE_NUMBA
 # See docs/DISCRETIZATION.md.
 DPF_SCHEME = "vanleer"
 
+# Default number of DPF finite-volume cells.  40 is grid-converged enough for
+# van Leer on the peripheral conduits; multi-panel grid figures may lower this
+# module-wide (e.g. 24) for speed without visible change.  ``dpf_outlet`` uses
+# this when called with ``n_cells=None``.
+DPF_N_CELLS = 40
+
 
 @_njit(cache=True)
 def _dpf_rates_core(c, cf, u, Dax, inv_dz, inv_dz2):
@@ -254,7 +260,7 @@ def _vanleer_rates_np(c, cf, u, Dax, inv_dz, inv_dz2):
 
 
 def dpf_outlet(t_grid, c_in, volume_uL, length_mm, diameter_mm, flow_mL_min,
-               n_cells=40, Pe=0.5, c0=0.0, max_step=None, scheme=None):
+               n_cells=None, Pe=0.5, c0=0.0, max_step=None, scheme=None):
     """
     Dispersed plug flow through a straight conduit, solved by a finite-volume
     method of lines with Danckwerts boundary conditions.
@@ -270,6 +276,8 @@ def dpf_outlet(t_grid, c_in, volume_uL, length_mm, diameter_mm, flow_mL_min,
     exactly V/Vdot while the diameter still sets the dispersion length scale.
     """
     scheme = (scheme or DPF_SCHEME).lower()
+    if n_cells is None:
+        n_cells = DPF_N_CELLS
     vdot = _vdot_fn(flow_mL_min)                           # callable t -> uL/s
     L = length_mm                                          # mm
 

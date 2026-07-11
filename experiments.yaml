@@ -1,95 +1,307 @@
 # Experiment configuration for the RTD model (improvement #14).
 #
-# Each experiment reproduces one panel of Chen et al. (2024), Figure 3 (pulse,
-# "C" series) or Figure 4 (stepwise, "V" series).  Add new experiments by
-# appending to the `experiments:` list; the CLI (`rtd_cli.py`) discovers them
-# automatically.
+# Each experiment reproduces one panel of Chen et al. (2024): Figure 3 (pulse,
+# "C" series) or Figure 4 (stepwise, "V" series).  Add a new experiment by
+# appending a block to `experiments:` below -- the CLI (`rtd_cli.py`) discovers
+# it automatically.
 #
 # Fields per experiment:
 #   name         short id (e.g. C1, V2-3)              [required]
-#   figure       3 or 4 -> which multi-panel grid it belongs to (null = neither)
-#   kind         "pulse" or "step"                     [required]
+#   figure       3 or 4 -> which grid it belongs to (null = neither)
+#   kind         "pulse" or "step"  (single-tracer shorthand; ignored if
+#                `species:` is given)
 #   connection   "bypass" | "connector" | "filter"     [required]
 #   flow         set-point flow rate, mL/min           [required]
 #   surface      filter surface area cm^2 (3/10/100), or null for no filter
-#   c_tracer     tracer concentration, mol/L (NaNO3)   [default 0.5]
-#   loop_uL      sample-loop volume, uL (pulse only)   [default 260]
-#   inject_at    injection unit label, or null -> "Loop" for pulse / "5" for step
-#   description  free text
-#   xmax         explicit x-axis limit (s), or null    [optional]
+#   c_tracer     NaNO3 concentration, mol/L (single-tracer shorthand)
+#   loop_uL      sample-loop volume, uL (pulse; default 260)
+#   inject_at    injection unit label, or null -> "Loop" (pulse) / "5" (step)
+#   description  free text (shown in plot titles / `list`)
+#   xmax         explicit x-axis limit (s), or null
+#   species      explicit multi-species list (overrides kind/c_tracer); each
+#                species has: name (buffer|NaNO3|antibody), and any of
+#                baseline / step / pulse concentrations.
 
 defaults:
-  style: paper        # "paper" (stacked) or "overlay"
-  focus: false        # tight x-axis auto-crop
-  dpi: 130            # figure/grid DPI
-  single_dpi: 300     # per-experiment high-resolution plot DPI
+  style: paper              # "paper" (stacked) or "overlay"
+  focus: false              # tight x-axis auto-crop
+  dpi: 130                  # figure/grid DPI
+  single_dpi: 300           # per-experiment high-resolution plot DPI
   single_size: [9.0, 6.0]   # per-experiment figure size, inches [w, h]
-  n_time: 1400        # time samples per simulation
+  n_time: 1400              # time samples per simulation
+
   # Equilibration buffer present at baseline for single-tracer C*/V* runs.
   # It is UV-transparent but conductive, so NaNO3 stepping in DISPLACES it and
   # conductivity dips (the paper's "U" shape) while UV rises; for a pulse the
   # buffer is a conductivity pedestal.  Set to null to model tracer-on-water.
-  # (Experiments that declare their own `species:` ignore this.)
-  background: {name: buffer, baseline: 1.0}
+  # Experiments that declare their own `species:` ignore this.
+  background:
+    name: buffer
+    baseline: 1.0
+
 
 experiments:
-  # -------- Figure 3: pulse-injection calibration (260 uL, 0.5 M NaNO3) -----
-  - {name: C1,   figure: 3, kind: pulse, connection: bypass,    flow: 1.0,  surface: null, description: "bypass, 1 mL/min"}
-  - {name: C2-1, figure: 3, kind: pulse, connection: connector, flow: 0.35, surface: null, description: "connector, 0.35 mL/min"}
-  - {name: C2-2, figure: 3, kind: pulse, connection: connector, flow: 1.0,  surface: null, description: "connector, 1 mL/min"}
-  - {name: C2-3, figure: 3, kind: pulse, connection: connector, flow: 10.0, surface: null, description: "connector, 10 mL/min"}
-  - {name: C3-1, figure: 3, kind: pulse, connection: filter,    flow: 0.35, surface: 3,    description: "3 cm2 filter, 0.35 mL/min"}
-  - {name: C3-2, figure: 3, kind: pulse, connection: filter,    flow: 1.0,  surface: 10,   description: "10 cm2 filter, 1 mL/min"}
-  - {name: C3-3, figure: 3, kind: pulse, connection: filter,    flow: 10.0, surface: 100,  description: "100 cm2 filter, 10 mL/min"}
 
-  # -------- Figure 4: stepwise validation -----------------------------------
-  - {name: V1,   figure: 4, kind: step, connection: bypass, flow: 10.0, surface: null, c_tracer: 0.05, description: "bypass, 0.05 M, 10 mL/min"}
-  - {name: V3,   figure: 4, kind: step, connection: bypass, flow: 10.0, surface: null, c_tracer: 0.1,  description: "bypass, 0.1 M, 10 mL/min"}
-  - {name: V2-1, figure: 4, kind: step, connection: filter, flow: 0.35, surface: 3,    c_tracer: 0.05, description: "3 cm2, 0.05 M, 0.35 mL/min"}
-  - {name: V2-2, figure: 4, kind: step, connection: filter, flow: 1.0,  surface: 10,   c_tracer: 0.05, description: "10 cm2, 0.05 M, 1 mL/min"}
-  - {name: V2-3, figure: 4, kind: step, connection: filter, flow: 10.0, surface: 100,  c_tracer: 0.05, description: "100 cm2, 0.05 M, 10 mL/min"}
-  - {name: V4-1, figure: 4, kind: step, connection: filter, flow: 0.35, surface: 3,    c_tracer: 0.1,  description: "3 cm2, 0.1 M, 0.35 mL/min"}
-  - {name: V4-2, figure: 4, kind: step, connection: filter, flow: 1.0,  surface: 10,   c_tracer: 0.1,  description: "10 cm2, 0.1 M, 1 mL/min"}
-  - {name: V4-3, figure: 4, kind: step, connection: filter, flow: 10.0, surface: 100,  c_tracer: 0.1,  description: "100 cm2, 0.1 M, 10 mL/min"}
+  # ======================================================================
+  # Figure 3 -- pulse-injection calibration (260 uL, 0.5 M NaNO3 pulse)
+  # ======================================================================
 
-  # -------- Combined step + pulse (multi-input; same species, #2) ------------
-  # A 0.05 M NaNO3 step with a 0.5 M NaNO3 pulse superimposed during steady
-  # state.  Single species -> UV and conductivity share the same shape.
-  - name: V5
-    figure: null
+  # C1 -- AKTA bypass at 1 mL/min (system dead-volume calibration)
+  - name: C1
+    figure: 3
+    kind: pulse
     connection: bypass
-    flow: 10.0
-    description: "combined: 0.05 M step + 0.5 M pulse, bypass, 10 mL/min"
-    species:
-      - {name: NaNO3, step: 0.05, pulse: 0.5}
-  - name: V6-2
-    figure: null
-    connection: filter
     flow: 1.0
-    surface: 10
-    description: "combined: 0.05 M step + 0.5 M pulse, 10 cm2, 1 mL/min"
-    species:
-      - {name: NaNO3, step: 0.05, pulse: 0.5}
-  - name: V7
-    figure: null
+    surface: null
+    c_tracer: 0.5
+    description: "bypass, 1 mL/min"
+
+  # C2-1 -- connector in the column position, 0.35 mL/min
+  - name: C2-1
+    figure: 3
+    kind: pulse
+    connection: connector
+    flow: 0.35
+    surface: null
+    c_tracer: 0.5
+    description: "connector, 0.35 mL/min"
+
+  # C2-2 -- connector, 1 mL/min
+  - name: C2-2
+    figure: 3
+    kind: pulse
+    connection: connector
+    flow: 1.0
+    surface: null
+    c_tracer: 0.5
+    description: "connector, 1 mL/min"
+
+  # C2-3 -- connector, 10 mL/min
+  - name: C2-3
+    figure: 3
+    kind: pulse
+    connection: connector
+    flow: 10.0
+    surface: null
+    c_tracer: 0.5
+    description: "connector, 10 mL/min"
+
+  # C3-1 -- 3 cm2 virus filter, 0.35 mL/min
+  - name: C3-1
+    figure: 3
+    kind: pulse
     connection: filter
     flow: 0.35
     surface: 3
-    description: "antibody: 0.5 g/L step + 2 g/L pulse, 3 cm2, 0.35 mL/min"
-    species:
-      - {name: antibody, step: 0.5, pulse: 2.0}
+    c_tracer: 0.5
+    description: "3 cm2 filter, 0.35 mL/min"
 
-  # -------- True multi-component transition demo (two species, #2) -----------
-  # A tris-acetate buffer (high conductivity, ~no UV) is displaced by NaNO3
-  # (UV-absorbing), with a 0.5 M NaNO3 pulse during the plateau.  Because the
-  # two species hit the detectors differently, conductivity DROPS while UV
-  # RISES across the transition -- the opposite-sign behaviour seen in real
-  # transition data.  Not a paper panel (figure: null); a demonstration.
+  # C3-2 -- 10 cm2 virus filter, 1 mL/min
+  - name: C3-2
+    figure: 3
+    kind: pulse
+    connection: filter
+    flow: 1.0
+    surface: 10
+    c_tracer: 0.5
+    description: "10 cm2 filter, 1 mL/min"
+
+  # C3-3 -- 100 cm2 virus filter, 10 mL/min
+  - name: C3-3
+    figure: 3
+    kind: pulse
+    connection: filter
+    flow: 10.0
+    surface: 100
+    c_tracer: 0.5
+    description: "100 cm2 filter, 10 mL/min"
+
+
+  # ======================================================================
+  # Figure 4 -- validation (Table 2, V1-V8; paper panel order a-n)
+  # ======================================================================
+
+  # V1 -- 0.05 M NaNO3 step, AKTA bypass, 10 mL/min
+  - name: V1
+    figure: 4
+    kind: step
+    connection: bypass
+    flow: 10.0
+    surface: null
+    c_tracer: 0.05
+    description: "bypass, 0.05 M, 10 mL/min"
+
+  # V3 -- 0.1 M NaNO3 step, AKTA bypass, 10 mL/min
+  - name: V3
+    figure: 4
+    kind: step
+    connection: bypass
+    flow: 10.0
+    surface: null
+    c_tracer: 0.1
+    description: "bypass, 0.1 M, 10 mL/min"
+
+  # V5 -- combined 0.05 M step + 0.5 M pulse, bypass, 10 mL/min
+  #       (buffer explicit so conductivity dips into a "U" then the pulse spikes)
+  - name: V5
+    figure: 4
+    connection: bypass
+    flow: 10.0
+    surface: null
+    description: "0.05 M step + 0.5 M pulse, bypass, 10 mL/min"
+    species:
+      - name: buffer
+        baseline: 1.0
+      - name: NaNO3
+        step: 0.05
+        pulse: 0.5
+
+  # V2-1 -- 0.05 M step, 3 cm2 filter, 0.35 mL/min
+  - name: V2-1
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 0.35
+    surface: 3
+    c_tracer: 0.05
+    description: "3 cm2, 0.05 M, 0.35 mL/min"
+
+  # V2-2 -- 0.05 M step, 10 cm2 filter, 1 mL/min
+  - name: V2-2
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 1.0
+    surface: 10
+    c_tracer: 0.05
+    description: "10 cm2, 0.05 M, 1 mL/min"
+
+  # V2-3 -- 0.05 M step, 100 cm2 filter, 10 mL/min
+  - name: V2-3
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 10.0
+    surface: 100
+    c_tracer: 0.05
+    description: "100 cm2, 0.05 M, 10 mL/min"
+
+  # V4-1 -- 0.1 M step, 3 cm2 filter, 0.35 mL/min
+  - name: V4-1
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 0.35
+    surface: 3
+    c_tracer: 0.1
+    description: "3 cm2, 0.1 M, 0.35 mL/min"
+
+  # V4-2 -- 0.1 M step, 10 cm2 filter, 1 mL/min
+  - name: V4-2
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 1.0
+    surface: 10
+    c_tracer: 0.1
+    description: "10 cm2, 0.1 M, 1 mL/min"
+
+  # V4-3 -- 0.1 M step, 100 cm2 filter, 10 mL/min
+  - name: V4-3
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 10.0
+    surface: 100
+    c_tracer: 0.1
+    description: "100 cm2, 0.1 M, 10 mL/min"
+
+  # V6-1 -- combined 0.05 M step + 0.5 M pulse, 3 cm2 filter, 0.35 mL/min
+  - name: V6-1
+    figure: 4
+    connection: filter
+    flow: 0.35
+    surface: 3
+    description: "0.05 M step + 0.5 M pulse, 3 cm2, 0.35 mL/min"
+    species:
+      - name: buffer
+        baseline: 1.0
+      - name: NaNO3
+        step: 0.05
+        pulse: 0.5
+
+  # V6-2 -- combined 0.05 M step + 0.5 M pulse, 10 cm2 filter, 1 mL/min
+  - name: V6-2
+    figure: 4
+    connection: filter
+    flow: 1.0
+    surface: 10
+    description: "0.05 M step + 0.5 M pulse, 10 cm2, 1 mL/min"
+    species:
+      - name: buffer
+        baseline: 1.0
+      - name: NaNO3
+        step: 0.05
+        pulse: 0.5
+
+  # V6-3 -- combined 0.05 M step + 0.5 M pulse, 100 cm2 filter, 10 mL/min
+  - name: V6-3
+    figure: 4
+    connection: filter
+    flow: 10.0
+    surface: 100
+    description: "0.05 M step + 0.5 M pulse, 100 cm2, 10 mL/min"
+    species:
+      - name: buffer
+        baseline: 1.0
+      - name: NaNO3
+        step: 0.05
+        pulse: 0.5
+
+  # V7 -- antibody 0.5 g/L step + 2 g/L pulse, 3 cm2 filter, 0.35 mL/min
+  #       (antibody is UV-absorbing but barely conductive)
+  - name: V7
+    figure: 4
+    connection: filter
+    flow: 0.35
+    surface: 3
+    description: "antibody 0.5 g/L step + 2 g/L pulse, 3 cm2, 0.35 mL/min"
+    species:
+      - name: buffer
+        baseline: 1.0
+      - name: antibody
+        step: 0.5
+        pulse: 2.0
+
+  # V8 -- continuous operation (twin 100 cm2 filters, valve switching).
+  #       The two-filter switching mode is NOT modelled; approximated here as a
+  #       single 100 cm2 step cycle at 10 mL/min (see docs/MULTICOMPONENT.md).
+  - name: V8
+    figure: 4
+    kind: step
+    connection: filter
+    flow: 10.0
+    surface: 100
+    c_tracer: 0.05
+    description: "continuous ~ 100 cm2 cycle, 10 mL/min (approx.)"
+
+
+  # ======================================================================
+  # Demonstrations (not paper panels; figure: null)
+  # ======================================================================
+
+  # TR1 -- true multi-component transition: a tris-acetate buffer (conductive,
+  #        UV-transparent) is displaced by 0.05 M NaNO3 (UV-absorbing), with a
+  #        0.5 M NaNO3 pulse during the plateau.  Conductivity DROPS while UV
+  #        RISES across the transition (the opposite-sign behaviour of real data).
   - name: TR1
     figure: null
     connection: connector
     flow: 1.0
     description: "transition demo: tris-acetate buffer -> 0.05 M NaNO3 + 0.5 M pulse"
     species:
-      - {name: buffer, baseline: 1.0}
-      - {name: NaNO3, step: 0.05, pulse: 0.5}
+      - name: buffer
+        baseline: 1.0
+      - name: NaNO3
+        step: 0.05
+        pulse: 0.5

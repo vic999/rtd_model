@@ -66,7 +66,7 @@ def cmd_list(args, experiments, defaults):
     for e in rows:
         surf = "-" if e.surface is None else str(e.surface)
         fig = "-" if e.figure is None else str(e.figure)
-        print(f"{e.name.ljust(w)}  {fig:>3}  {e.kind:<5}  {e.connection:<10}  "
+        print(f"{e.name.ljust(w)}  {fig:>3}  {e.display_kind:<5}  {e.connection:<10}  "
               f"{e.flow:>11}  {surf:>8}  {e.description}")
     print(f"\n{len(rows)} experiment(s). Config: {args.config or 'experiments.yaml'}")
 

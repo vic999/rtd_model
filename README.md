@@ -115,8 +115,11 @@ tracer-on-water baseline. Note: with the linear conductivity model, 0.1 M NaNO�
 ## Command-line interface
 
 `rtd_cli.py` drives everything from experiments defined in `experiments.yaml`.
-Add a new experiment by appending one line to that file — the CLI finds it
-automatically. Four sub-commands, each with `--help`:
+All 21 experiments from the paper's Table 2 are configured — the **7 C-series**
+(Figure 3) and the **14 V-series** (Figure 4, including the combined V5/V6,
+antibody V7, and continuous V8). Add a new experiment by appending one line to
+that file — the CLI finds it automatically. Four sub-commands, each with
+`--help`:
 
 ```bash
 python3 rtd_cli.py list                              # list all experiments (C*, V*)

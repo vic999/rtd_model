@@ -113,6 +113,20 @@ only a small change rather than a deep U. Real molar conductivity falls with
 concentration, so 0.1 M would sit a little below the buffer; capturing that
 needs a concentration-dependent conductivity (not currently modelled).
 
+## Full experiment set (Table 2)
+
+All 21 paper experiments are configured: the **7 C-series** (Figure 3, pulse
+calibration) and the **14 V-series** (Figure 4) — V1–V4 (stepwise), V5/V6
+(combined 0.05 M step + 0.5 M pulse), V7 (antibody), V8 (continuous). Run
+`python3 rtd_cli.py list` to see them; `figure --which 3|4|both` builds the
+grids.
+
+**V8 caveat.** V8 is the *continuous* mode — twin 100 cm² filters with valve
+switching between cycles. That two-filter switching is **not** modelled; V8 is
+approximated as a single 100 cm² step cycle at 10 mL/min (its title says
+"approx."). A faithful V8 would need a new "continuous" connection with two
+filter instances and a switch schedule (a candidate backlog item).
+
 ## Caveats
 
 - **Superposition validity.** Independent per-species propagation is exact only
