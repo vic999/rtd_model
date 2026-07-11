@@ -1,30 +1,22 @@
 #!/usr/bin/env python3
 """
-Compare the RTD model against a real ÄKTA UNICORN run and infer the flow-path
-configuration.
+Compare the RTD model against a real ÄKTA UNICORN run, auto-detect the run
+parameters, and infer the flow-path configuration.
 
-Data:  a combined stepwise + pulse experiment (260 µL / 0.5 M NaNO3 pulse on a
-50 mM NaNO3 transition, 1 mL/min).  Conductivity steps DOWN during the NaNO3
-plateau while the pulse makes both UV and conductivity spike -- i.e. the step
-(buffer swap) and the pulse (added NaNO3) are two independent components that
-hit the two detectors with different coefficients (Beer's / Kohlrausch's law).
+The script is *general*: point it at any UNICORN CSV and it will
 
-Method
-------
-1. Reconstruct the two *input* programmes:  a unit step over [t_on, t_off] and
-   a rectangular 260 µL pulse at t_pulse.
-2. Propagate EACH input through a candidate equipment train -> two basis
-   response shapes per detector (read at the UV monitor U9-D and the
-   conductivity monitor C9).  The RTD physics -- delay, dispersion, tailing --
-   lives entirely in these shapes.
-3. For each detector, fit  signal = a*step_response + b*pulse_response + c
-   by linear least squares.  a, b, c are just the detector calibration
-   constants (molar absorptivity / molar conductivity / baseline); they set
-   units, not shape.
-4. A single global time shift (input->detector delay) is optimised to maximise
-   the combined R².
-5. Repeat for connection in {bypass, connector, 10 cm² filter} and report which
-   reproduces the data best (highest mean R²), with an overlay plot.
+  * detect the flow profile from the measured System-flow column and drive the
+    model with it (rtd.flow.FromData) -- no hard-coded flow rate,
+  * detect the buffer-transition edges and whether a pulse is present,
+  * reconstruct the corresponding input programmes,
+  * propagate them through each candidate train, fit the two detectors
+    (Beer's / Kohlrausch's law -> the linear a,b,c set units, not shape),
+  * and report which configuration reproduces the data best.
+
+For the bundled file this is a combined stepwise + pulse experiment (260 µL /
+0.5 M NaNO3 pulse on a 50 mM NaNO3 transition).  Conductivity steps DOWN during
+the NaNO3 plateau while the pulse makes both UV and conductivity spike -- the
+step (buffer swap) and the pulse (added NaNO3) are two independent components.
 
 Run:  python3 compare_data.py "<path to csv>"
 """
@@ -38,9 +30,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from rtd import build_train, run_train, r2_score
-from rtd.data import (load_unicorn_csv, common_grid, resample,
-                      nominal_flow, detect_events)
+from rtd import build_train, run_train, r2_score, as_flow_fn
+from rtd.injection import pulse_inlet
+from rtd.data import (load_unicorn_csv, resample, detect_run_parameters)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CSV = os.path.join(
@@ -74,13 +66,15 @@ def basis_responses(cfg_kw, t, ev, flow, loop_uL=260.0):
     """
     Propagate the transition (ramp) and pulse inputs through a train; return the
     UV- and cond-monitor responses to each (4 arrays).
+
+    ``flow`` may be a scalar or a FlowProfile (e.g. FromData of the measured
+    System-flow column).  The pulse is delivered by VOLUME via pulse_inlet, so
+    it is correct even when the flow varies.
     """
     seq, names, uv_i, cond_i = build_train(**cfg_kw)
 
-    Vdot = flow * 1000.0 / 60.0
-    width = loop_uL / Vdot
     trans_in = _ramp_input(t, ev)
-    pulse_in = ((t >= ev["t_pulse"]) & (t < ev["t_pulse"] + width)).astype(float)
+    pulse_in = pulse_inlet(t, loop_uL, flow, c_tracer=1.0, t_start=ev["t_pulse"])
 
     s_sig, _ = run_train(seq, t, trans_in, flow, read_indices=[uv_i, cond_i])
     p_sig, _ = run_train(seq, t, pulse_in, flow, read_indices=[uv_i, cond_i])
@@ -157,19 +151,42 @@ def evaluate(cfg_kw, t, ev, flow, uv_meas, cond_meas, dt):
     return best
 
 
+def _report_parameters(p):
+    """Print the auto-detected run parameters."""
+    ev = p["events"]
+    fv = "varying" if p["flow_is_varying"] else "constant"
+    print("=" * 64)
+    print("AUTO-DETECTED RUN PARAMETERS")
+    print("-" * 64)
+    print(f"  duration            : {p['duration_s']:.0f} s")
+    print(f"  flow (from data)    : {fv}, set-point {p['flow_setpoint']:.2f} "
+          f"mL/min (min {p['flow_min']:.2f}) -> driven by FromData profile")
+    print(f"  buffer transition   : {'yes' if p['has_transition'] else 'no'}")
+    if ev is not None:
+        print(f"    gradient edges (s): on {ev['on_start']:.0f}->{ev['on_end']:.0f}, "
+              f"off {ev['off_start']:.0f}->{ev['off_end']:.0f}")
+    print(f"  pulse present       : {'yes' if p['has_pulse'] else 'no'} "
+          f"(prominence {p['pulse_prominence']:.1f} mAU)")
+    if ev is not None:
+        print(f"    pulse time (s)    : {ev['t_pulse']:.0f}")
+    print("=" * 64 + "\n")
+
+
 def main(csv_path):
     data = load_unicorn_csv(csv_path)
-    flow = nominal_flow(data) or 1.0
-    t = common_grid(data, n=1600)
-    dt = t[1] - t[0]
-    uv_meas = resample(data["uv_t"], data["uv"], t)
-    cond_meas = resample(data["cond_t"], data["cond"], t)
-    ev = detect_events(t, cond_meas, uv_meas)
-    print(f"flow = {flow} mL/min ; gradient edges (s): on {ev['on_start']:.0f}->"
-          f"{ev['on_end']:.0f}, off {ev['off_start']:.0f}->{ev['off_end']:.0f}, "
-          f"pulse={ev['t_pulse']:.0f}\n")
-    print(f"{'configuration':16s}  {'R2_UV':>7s} {'R2_Cond':>7s} {'R2_pulse(UV/Cond)':>18s}")
+    params = detect_run_parameters(data, n=1600)
+    _report_parameters(params)
 
+    t = params["t"]
+    dt = t[1] - t[0]
+    uv_meas, cond_meas = params["uv"], params["cond"]
+    ev = params["events"]
+    flow = params["flow_profile"]          # FromData profile from the measurement
+    if ev is None:
+        print("No buffer transition detected -- cannot reconstruct inputs; abort.")
+        return
+
+    print(f"{'configuration':16s}  {'R2_UV':>7s} {'R2_Cond':>7s} {'R2_pulse(UV/Cond)':>18s}")
     results = []
     for label, kw in CONFIGS:
         best = evaluate(kw, t, ev, flow, uv_meas, cond_meas, dt)
@@ -177,12 +194,14 @@ def main(csv_path):
         print(f"  {label:16s}  {best['r_uv']:6.3f} {best['r_cond']:7.3f}   "
               f"{best['r_uv_pulse']:6.3f} /{best['r_cond_pulse']:6.3f}")
 
-    # rank by the pulse-window R² (the genuine RTD discriminator)
-    def pulse_score(b):
-        return 0.5 * (b["r_uv_pulse"] + b["r_cond_pulse"])
-    label, kw, best = max(results, key=lambda r: pulse_score(r[2]))
-    print(f"\nBest configuration (by pulse R²): {label}  "
-          f"pulse R² = {pulse_score(best):.3f}, full-run mean R² = {best['score']:.3f}")
+    # Rank by the full-run mean R²: it cleanly separates no-filter from filter
+    # configurations (a filter's large dead volume distorts the whole trace).
+    # The pulse R² is reported as a secondary RTD diagnostic -- it is a weaker
+    # discriminator here because the real pulse tails more than the ideal model.
+    label, kw, best = max(results, key=lambda r: r[2]["score"])
+    print(f"\nBest configuration (by full-run mean R²): {label}  "
+          f"full-run mean R² = {best['score']:.3f}  "
+          f"(pulse R² diagnostic = {0.5*(best['r_uv_pulse']+best['r_cond_pulse']):.3f})")
 
     # overlay plot for the winning configuration: full run + pulse zoom
     fig = plt.figure(figsize=(13, 8))
@@ -193,9 +212,15 @@ def main(csv_path):
 
     a1.plot(t, uv_meas, color="#1f6fb2", lw=1.2, label="experiment")
     a1.plot(t, best["uvhat"], "k--", lw=1.0, label="model")
-    a1.set_ylabel("UV 280 (mAU)"); a1.legend(loc="upper right")
+    a1.set_ylabel("UV 280 (mAU)"); a1.legend(loc="upper left")
     a1.set_title(f"Full run — {label}  (R²_UV={best['r_uv']:.3f}, "
                  f"R²_Cond={best['r_cond']:.3f})")
+    # measured flow (drives the model) on a third axis
+    aflow = a1.twinx()
+    flow_vals = np.atleast_1d(as_flow_fn(flow)(t)) * np.ones_like(t)
+    aflow.plot(t, flow_vals, color="#e69500", lw=1.0, ls=":")
+    aflow.set_ylabel("Flow (mL/min)", color="#e69500")
+    aflow.set_ylim(0, max(1e-6, np.max(flow_vals) * 1.6))
     a2.plot(t, cond_meas, color="#2ca02c", lw=1.2)
     a2.plot(t, best["condhat"], "k--", lw=1.0)
     a2.set_ylabel("Cond (mS/cm)"); a2.set_xlabel("time (s)")

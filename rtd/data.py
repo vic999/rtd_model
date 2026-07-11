@@ -16,6 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .flow import FromData
+
 
 def load_unicorn_csv(path):
     """
@@ -102,11 +104,74 @@ def detect_events(t, cond, uv):
     off_start = t[i1]                                         # leaves low plateau
     off_end = t[first_cross_after(i1, hi_lvl, above=True)]    # back to high plateau
 
-    below = c < lo_lvl
-
-    uv_masked = np.where(below, uv, -np.inf)
+    # Pulse = UV maximum within the plateau TIME window [on_end, off_start].
+    # (Do NOT mask by low conductivity: the pulse itself spikes the conductivity
+    #  above the low threshold, which would exclude the very peak we want.)
+    plateau_win = (t >= on_end) & (t <= off_start)
+    uv_masked = np.where(plateau_win, uv, -np.inf)
     t_pulse = t[int(np.argmax(uv_masked))]
 
     return {"on_start": float(on_start), "on_end": float(on_end),
             "off_start": float(off_start), "off_end": float(off_end),
             "t_pulse": float(t_pulse)}
+
+
+def detect_run_parameters(data, n=1600, t=None):
+    """
+    Automatically detect the run parameters from a raw ÄKTA export.
+
+    Generalises the analysis so any CSV can be characterised without the caller
+    knowing the experiment in advance.  Returns a dict with:
+
+        t, uv, cond        -- signals resampled on a common grid
+        flow_profile       -- a FlowProfile (FromData) built from the measured
+                              System-flow column (drives the model directly)
+        flow_setpoint      -- steady flow (mL/min, max of the positive samples)
+        flow_min           -- min positive flow (mL/min)
+        flow_is_varying    -- True if the flow changes appreciably during the run
+        events             -- transition edges + pulse time (see detect_events)
+        has_pulse          -- True if a distinct UV spike sits on the plateau
+        has_transition     -- True if a conductivity plateau/transition exists
+        pulse_prominence   -- UV spike height above the plateau (mAU)
+        duration_s         -- record length (s)
+    """
+    if t is None:
+        t = common_grid(data, n=n)
+    uv = resample(data["uv_t"], data["uv"], t)
+    cond = resample(data["cond_t"], data["cond"], t)
+
+    # --- flow: build a FromData profile straight from the measurement --------
+    flow_profile = FromData(data["flow_t"], data["flow"])
+    fvals = np.asarray(flow_profile(t), float)
+    pos = fvals[fvals > 1e-6]
+    flow_setpoint = float(pos.max()) if pos.size else 0.0
+    flow_min = float(pos.min()) if pos.size else 0.0
+    flow_is_varying = bool(pos.size and (np.ptp(pos) > 0.05 * max(flow_setpoint, 1e-9)))
+
+    # --- transition + pulse events ------------------------------------------
+    rng = np.ptp(cond)
+    has_transition = bool(rng > 0.2 * (abs(np.median(cond)) + 1e-9))
+    try:
+        events = detect_events(t, cond, uv)
+    except Exception:
+        events = None
+        has_transition = False
+
+    # --- pulse detection: UV spike prominence above the local plateau --------
+    has_pulse, prominence = False, 0.0
+    if events is not None:
+        on_end, off_start = events["on_end"], events["off_start"]
+        plateau_mask = (t > on_end) & (t < off_start)
+        if plateau_mask.sum() > 5:
+            plateau_uv = np.median(uv[plateau_mask])
+            i_pulse = int(np.argmin(np.abs(t - events["t_pulse"])))
+            prominence = float(uv[i_pulse] - plateau_uv)
+            has_pulse = prominence > 0.15 * (np.ptp(uv) + 1e-9)
+
+    return dict(
+        t=t, uv=uv, cond=cond,
+        flow_profile=flow_profile, flow_setpoint=flow_setpoint,
+        flow_min=flow_min, flow_is_varying=flow_is_varying,
+        events=events, has_pulse=has_pulse, has_transition=has_transition,
+        pulse_prominence=prominence, duration_s=float(t[-1] - t[0]),
+    )
