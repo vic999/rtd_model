@@ -1,3 +1,9 @@
 numpy>=1.24
 scipy>=1.10
 matplotlib>=3.6
+pandas>=1.5          # ÄKTA CSV loading (rtd/data.py, compare_data.py)
+
+# Optional: JIT-compiles the DPF stencil for extra speed.  The code runs
+# without it (falls back to the vectorised NumPy path); install for best
+# performance.
+# numba>=0.58

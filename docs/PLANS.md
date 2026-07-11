@@ -27,6 +27,9 @@ It covers three things you asked about:
   transition edges, and pulse presence from any raw CSV (backlog item 9).
 - **✅ Verification** — `verify.py` adds constant-flow regression and
   mass-conservation-under-varying-flow checks.
+- **✅ Performance** — analytic sparse Jacobians, vectorised permeate RHS,
+  cached basis responses, optional Numba, and a window-sizing fix (backlog
+  item 10). Same results, roughly 2× faster.
 
 ---
 
@@ -222,8 +225,14 @@ Roughly in priority order for matching the paper and hardening the code:
    CSV — `rtd.data.detect_run_parameters` + generalised `compare_data.py`: the
    flow profile is read from the data (`FromData`) and drives the model, and the
    transition edges and pulse presence are detected automatically.
-10. **⬜ NOT YET — Performance** — analytic/sparse Jacobian for BDF, vectorised
-    right-hand sides, caching of basis responses, optional Numba.
+10. **✅ IMPLEMENTED — Performance** — analytic *sparse* Jacobian for BDF (CST
+    1×1, DPF tridiagonal, constant-ε filter block; sparsity pattern otherwise),
+    vectorised right-hand sides (permeate stage loop removed), caching of basis
+    responses in `compare_data.py`, and optional Numba JIT of the DPF stencil
+    (NumPy fallback when absent). Profiling also fixed a window-sizing bug (the
+    representative flow was read during the pump ramp), which was the largest
+    single speed-up. Results unchanged; `run_figures.py` ~60 s → ~34 s, heavy
+    filter panels ~7–8 s → ~3 s.
 11. **◐ PARTIAL — Test suite + CI** — `verify.py` covers mass conservation,
     mean-residence-time, steady-state gain, constant-flow regression, and
     varying-flow mass conservation. Still missing: convergence tests and an

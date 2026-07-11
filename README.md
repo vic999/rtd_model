@@ -135,6 +135,32 @@ flow. Passing a number reproduces the old results exactly. See
 [`docs/FLOW_PROFILES.md`](docs/FLOW_PROFILES.md) for the full configuration guide
 and `demo_flow_profiles.py` for a worked example.
 
+## Performance
+
+The solvers are tuned so results are unchanged but produced faster:
+
+- **Analytic sparse Jacobian.** BDF is implicit and needs a Jacobian each step.
+  Instead of letting SciPy estimate it by finite differences, the CST supplies
+  its 1×1 Jacobian, the DPF its exact **tridiagonal** Jacobian (`scipy.sparse`),
+  and the constant-ε filter its exact block Jacobian (a sparsity pattern is
+  given when the film-resistance term makes it nonlinear). Validated against a
+  finite-difference reference to ~1e-10.
+- **Vectorised right-hand sides.** The filter's permeate model now computes all
+  `l` radial stages with array operations instead of a Python loop.
+- **Optional Numba.** If `numba` is installed, the DPF stencil is JIT-compiled
+  to machine code; otherwise the identical vectorised NumPy path is used. Toggle
+  with `USE_NUMBA` in `rtd/units.py`.
+- **Cached basis responses.** `compare_data.py` memoises each configuration's
+  step/pulse simulations, so repeated calls (e.g. a future calibration sweep)
+  reuse them instead of re-integrating — a repeat call drops from ~5 s to ~0 s.
+- **Correct window sizing.** Profiling also surfaced a bug: the representative
+  flow used for choosing the simulated time window was probed during the pump
+  ramp, over-estimating the residence time ~6× and making the window (and run
+  time) far too large. Fixed by probing past the ramp.
+
+Net effect: `run_figures.py` (both figures) dropped from ~60 s to ~34 s, and the
+heavy filter panels from ~7–8 s to ~3 s each — with identical curves and R².
+
 ## How to run
 
 ```bash

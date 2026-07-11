@@ -76,10 +76,17 @@ def _train_holdup_uL(seq):
     return total
 
 
-def _rep_flow(flow, t):
-    """Representative (set-point) flow in mL/min for sizing time windows."""
+def _rep_flow(flow):
+    """
+    Representative (set-point) flow in mL/min for sizing time windows.
+
+    Probes the profile over a wide horizon (0..600 s) so it captures the
+    set-point *after* any start-up ramp (e.g. DelayedStep's ~6 s lead-in) or the
+    peak of a saw-tooth.  A short probe would read the ramp's low initial value
+    and badly over-estimate the residence time / window length.
+    """
     fn = as_flow_fn(flow)
-    v = np.atleast_1d(fn(t))
+    v = np.atleast_1d(fn(np.linspace(0.0, 600.0, 600)))
     pos = v[v > 1e-9]
     return float(pos.max()) if pos.size else float(np.max(v))
 
@@ -92,8 +99,7 @@ def simulate_pulse(connection, flow, surface=None, loop_uL=260.0,
     """
     seq, names, uv_i, cond_i = build_train(connection, surface_cm2=surface)
     holdup = _train_holdup_uL(seq)
-    t_probe = np.linspace(0, 1, 50)             # for representative flow
-    Vdot = _rep_flow(flow, t_probe) * 1000.0 / 60.0
+    Vdot = _rep_flow(flow) * 1000.0 / 60.0
     mean_res = holdup / Vdot
     pulse_w = loop_uL / Vdot
     t_end = t_start + pulse_w + t_span_factor * mean_res
@@ -111,8 +117,7 @@ def simulate_step(connection, flow, surface=None, c_tracer=0.05,
     """Returns t, UV(mAU), Cond(mS/cm), flow(mL/min)."""
     seq, names, uv_i, cond_i = build_train(connection, surface_cm2=surface)
     holdup = _train_holdup_uL(seq)
-    t_probe = np.linspace(0, 1, 50)
-    Vdot = _rep_flow(flow, t_probe) * 1000.0 / 60.0
+    Vdot = _rep_flow(flow) * 1000.0 / 60.0
     mean_res = holdup / Vdot
     t_on = 0.5 * mean_res
     t_off = t_on + t_span_factor * mean_res      # plateau then wash-out
@@ -305,7 +310,14 @@ def _make_figure(experiments, simulate_fn, suptitle, outfile, style=None):
         raise ValueError(f"Unknown PLOT_STYLE {style!r} (use 'overlay' or 'paper')")
 
     fig.suptitle(suptitle, fontsize=11)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    # tight_layout is only fully compatible with the "overlay" grid; the "paper"
+    # layout uses nested sub-gridspecs, for which tight_layout emits a harmless
+    # UserWarning.  Suppress it -- the gridspec hspace/wspace already space the
+    # panels correctly.
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(outfile, dpi=130)
     print("wrote", outfile)
 

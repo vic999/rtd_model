@@ -48,6 +48,7 @@ the film-resistance term and for fast sanity runs.
 from __future__ import annotations
 
 import numpy as np
+from scipy import sparse
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
@@ -88,52 +89,86 @@ def permeate_space_outlet(
     d_bar = _permeate_diameter_mm(V_O_uL)                 # mm
     area_ratio = A3_REF_CM2 / surface_cm2                 # A3 / Aj
 
+    eps_floor = 0.05
+
     def eps_of(dc_k1, u13):
+        """Through-flow fraction eps.  Works on a scalar or a NumPy array of
+        stage driving forces (vectorised, improvement #10, part 2)."""
         if not film_resistance:
-            return eps_const
+            return np.clip(np.full_like(np.atleast_1d(dc_k1), eps_const,
+                                        dtype=float), eps_floor, 0.999)
         # Eq. 8 with the binary-buffer term.  In a binary tracer/buffer system
         # the displaced-buffer driving force mirrors the tracer one, so
         #   dceq_k1 + alpha*dc_k1  ~  (alpha - 1) * dc_k1.
         # NOTE: quantitative use of this term needs the km,eq scale factor,
         # which is not tabulated in the paper; dcmax alone cannot fix the
         # absolute scale, so we saturate the argument to keep eps in (0,1)
-        # and the ODE non-stiff.  This reproduces the qualitative behaviour
-        # (eps -> 1 at equilibrium, eps -> eps_floor when |dc| is large).
-        arg = u13 * area_ratio * ((alpha - 1.0) * dc_k1) / dcmax
-        eps_floor = 0.05
-        # smooth, bounded map of the (possibly huge) argument into [floor, 1]
-        val = 1.0 - (1.0 - eps_floor) * np.tanh(abs(arg))
-        return min(1.0, max(eps_floor, val))
+        # and the ODE non-stiff.
+        arg = u13 * area_ratio * ((alpha - 1.0) * np.asarray(dc_k1)) / dcmax
+        val = 1.0 - (1.0 - eps_floor) * np.tanh(np.abs(arg))
+        return np.clip(val, eps_floor, 0.999)
 
     # State vector: [c_k1_1, c_k2_1, c_k1_2, c_k2_2, ..., c_k1_l, c_k2_l]
+    # Vectorised right-hand side (no Python stage loop).
     def rhs(t, y):
         cf = cin(t)
         Vdot = vdot(t)                                    # uL/s (time-dependent)
-        # side-area velocity u = Vdot / (pi d_bar L) [mm/s] -> film-resistance
-        u_side = Vdot / (np.pi * d_bar * L_EQUIV_MM)
+        u_side = Vdot / (np.pi * d_bar * L_EQUIV_MM)      # mm/s (film resistance)
         u13 = abs(u_side) ** (1.0 / 3.0)
+
+        ck1 = y[0::2]
+        ck2 = y[1::2]
+        prev = np.empty(l)
+        prev[0] = cf
+        prev[1:] = ck1[:-1]
+        dc_k1 = prev - ck1
+        eps = np.broadcast_to(eps_of(dc_k1, u13), (l,))
+        Vk1 = eps * Vstage
+        Vk2 = (1.0 - eps) * Vstage
+
         dydt = np.empty_like(y)
-        prev_k1 = cf
-        for j in range(l):
-            ck1 = y[2 * j]
-            ck2 = y[2 * j + 1]
-            dc_k1 = prev_k1 - ck1
-            eps = eps_of(dc_k1, u13)
-            eps = min(max(eps, 0.05), 0.999)              # keep tanks non-degenerate
-            Vk1 = eps * Vstage
-            Vk2 = (1.0 - eps) * Vstage
-            # Eq. 3 (through-flow tank)
-            dydt[2 * j] = (Vdot * dc_k1 + eta * Vdot * (ck2 - ck1)) / Vk1
-            # Eq. 4 (exchange tank)
-            dydt[2 * j + 1] = (eta * Vdot * (ck1 - ck2)) / Vk2
-            prev_k1 = ck1
+        dydt[0::2] = (Vdot * dc_k1 + eta * Vdot * (ck2 - ck1)) / Vk1   # Eq. 3
+        dydt[1::2] = (eta * Vdot * (ck1 - ck2)) / Vk2                  # Eq. 4
         return dydt
+
+    # --- Jacobian info (improvement #10, part 1) ---------------------------
+    # Sparsity pattern: dck1_j depends on ck1_j, ck2_j and ck1_{j-1};
+    #                   dck2_j depends on ck1_j, ck2_j.
+    S = sparse.lil_matrix((2 * l, 2 * l))
+    for j in range(l):
+        S[2 * j, 2 * j] = 1; S[2 * j, 2 * j + 1] = 1
+        if j > 0:
+            S[2 * j, 2 * (j - 1)] = 1
+        S[2 * j + 1, 2 * j] = 1; S[2 * j + 1, 2 * j + 1] = 1
+    S = S.tocsc()
+
+    jac = None
+    jac_sparsity = S
+    if not film_resistance:
+        # Constant eps -> the system is linear, so an exact analytic Jacobian is
+        # available (depends on t only through Vdot).  Faster than finite diff.
+        eps_c = float(np.clip(eps_const, eps_floor, 0.999))
+        Vk1_c = eps_c * Vstage
+        Vk2_c = (1.0 - eps_c) * Vstage
+
+        def jac(t, y):
+            Vdot = vdot(t)
+            J = sparse.lil_matrix((2 * l, 2 * l))
+            for j in range(l):
+                J[2 * j, 2 * j] = (-Vdot - eta * Vdot) / Vk1_c
+                J[2 * j, 2 * j + 1] = eta * Vdot / Vk1_c
+                if j > 0:
+                    J[2 * j, 2 * (j - 1)] = Vdot / Vk1_c
+                J[2 * j + 1, 2 * j] = eta * Vdot / Vk2_c
+                J[2 * j + 1, 2 * j + 1] = -eta * Vdot / Vk2_c
+            return J.tocsc()
+        jac_sparsity = None                               # jac supersedes sparsity
 
     y0 = np.full(2 * l, c0, dtype=float)
     if max_step is None:
         max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     sol = solve_ivp(
-        rhs, (t_grid[0], t_grid[-1]), y0,
+        rhs, (t_grid[0], t_grid[-1]), y0, jac=jac, jac_sparsity=jac_sparsity,
         t_eval=t_grid, method="BDF", rtol=1e-6, atol=1e-9, max_step=max_step,
     )
     return sol.y[2 * (l - 1)]                              # k1 of last stage

@@ -62,6 +62,16 @@ def _ramp_input(t, ev):
     return f
 
 
+# Cache of computed basis responses (improvement #10, part 3).  The two
+# simulations a candidate configuration needs depend only on
+# (configuration, event times, flow profile, time grid, loop volume) -- not on
+# the detector fit or the time-shift search.  Memoising them means each unique
+# (config, run) pair is simulated once; repeated calls (e.g. an inverse-
+# calibration optimiser sweeping detector constants, or re-running a config)
+# reuse the result instead of re-integrating the ODEs.
+_BASIS_CACHE = {}
+
+
 def basis_responses(cfg_kw, t, ev, flow, loop_uL=260.0):
     """
     Propagate the transition (ramp) and pulse inputs through a train; return the
@@ -69,16 +79,25 @@ def basis_responses(cfg_kw, t, ev, flow, loop_uL=260.0):
 
     ``flow`` may be a scalar or a FlowProfile (e.g. FromData of the measured
     System-flow column).  The pulse is delivered by VOLUME via pulse_inlet, so
-    it is correct even when the flow varies.
+    it is correct even when the flow varies.  Results are cached (see above);
+    the time grid and flow object are identified by ``id(...)`` -- stable for
+    the duration of a run.
     """
-    seq, names, uv_i, cond_i = build_train(**cfg_kw)
+    key = (tuple(sorted(cfg_kw.items())), tuple(sorted(ev.items())),
+           id(t), id(flow), float(loop_uL))
+    cached = _BASIS_CACHE.get(key)
+    if cached is not None:
+        return cached
 
+    seq, names, uv_i, cond_i = build_train(**cfg_kw)
     trans_in = _ramp_input(t, ev)
     pulse_in = pulse_inlet(t, loop_uL, flow, c_tracer=1.0, t_start=ev["t_pulse"])
 
     s_sig, _ = run_train(seq, t, trans_in, flow, read_indices=[uv_i, cond_i])
     p_sig, _ = run_train(seq, t, pulse_in, flow, read_indices=[uv_i, cond_i])
-    return (s_sig[uv_i], p_sig[uv_i], s_sig[cond_i], p_sig[cond_i])
+    result = (s_sig[uv_i], p_sig[uv_i], s_sig[cond_i], p_sig[cond_i])
+    _BASIS_CACHE[key] = result
+    return result
 
 
 def _shift(y, k):
