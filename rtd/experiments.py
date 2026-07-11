@@ -77,24 +77,37 @@ class Experiment:
     description: str = ""
     xmax: Optional[float] = None    # explicit x-limit (s)
     species: Optional[list] = None  # multi-species; None -> single NaNO3 tracer
+    background: Optional[dict] = None  # equilibration buffer added to single-tracer runs
 
     @property
     def title(self) -> str:
         return f"{self.name}  ({self.description})" if self.description else self.name
 
     def species_list(self):
-        """Resolve to a list[Species].  If none are declared, synthesise a
-        single NaNO3 species from ``kind`` / ``c_tracer`` (backward compatible)."""
+        """Resolve to a list[Species].
+
+        If a `species:` list is declared it is used as-is.  Otherwise a single
+        NaNO3 species is synthesised from ``kind`` / ``c_tracer``, and -- if a
+        ``background`` (equilibration buffer) is configured -- that buffer is
+        prepended.  The buffer is present at baseline and, for a step, is
+        displaced by the NaNO3 (so conductivity dips: the paper's "U" shape)."""
         if self.species:
             return [s if isinstance(s, Species) else Species(**s)
                     for s in self.species]
-        if self.kind == "pulse":
-            return [Species("NaNO3", pulse=self.c_tracer)]
-        return [Species("NaNO3", step=self.c_tracer)]
+        out = []
+        if self.background:
+            out.append(self.background if isinstance(self.background, Species)
+                       else Species(**self.background))
+        nano3 = (Species("NaNO3", pulse=self.c_tracer) if self.kind == "pulse"
+                 else Species("NaNO3", step=self.c_tracer))
+        out.append(nano3)
+        return out
 
     @property
     def has_step(self) -> bool:
-        return any(s.step or s.baseline for s in self.species_list())
+        # only a real STEP component defines a step window (a baseline buffer
+        # that is present throughout does not).
+        return any(s.step for s in self.species_list())
 
     @property
     def injection_node(self) -> str:
@@ -183,15 +196,44 @@ def simulate(exp: Experiment, n_time: int = 1400,
     t = np.linspace(0.0, t_end, n_time)
 
     conc_uv_by, conc_cond_by = {}, {}
+
+    # --- pass 1: species with a step and/or pulse component (need a solve) ---
+    pure_step = None                                      # (step_conc, cu, cc)
     for sp in species:
+        if not (sp.step or sp.pulse):
+            continue
         c_in = _species_inlet(t, sp, has_step, t_on, t_off, t_pulse,
                               exp.loop_uL, flow_profile)
-        # Start the train pre-equilibrated with this species' baseline (so a
-        # background buffer is already present at t=0, not filling from empty).
         signals, _ = run_train(seq, t, c_in, flow_profile,
                                read_indices=[uv_i, cond_i], c0=sp.baseline)
-        conc_uv_by[sp.name] = conc_uv_by.get(sp.name, 0.0) + signals[uv_i]
-        conc_cond_by[sp.name] = conc_cond_by.get(sp.name, 0.0) + signals[cond_i]
+        cu, cc = signals[uv_i], signals[cond_i]
+        conc_uv_by[sp.name] = conc_uv_by.get(sp.name, 0.0) + cu
+        conc_cond_by[sp.name] = conc_cond_by.get(sp.name, 0.0) + cc
+        if sp.step and not sp.pulse and not sp.baseline:
+            pure_step = (sp.step, cu, cc)
+
+    # --- pass 2: baseline-only species (equilibration buffer) ---------------
+    # No extra ODE solve needed in the common cases:
+    #   * displaced by a single pure step  -> analytic complement (linearity),
+    #   * present throughout (pulse runs)   -> constant baseline.
+    for sp in species:
+        if sp.step or sp.pulse or not sp.baseline:
+            continue
+        if has_step and pure_step is not None:
+            step_c, cu0, cc0 = pure_step
+            cu = sp.baseline * (1.0 - cu0 / step_c)       # buffer = complement
+            cc = sp.baseline * (1.0 - cc0 / step_c)
+        elif not has_step:
+            cu = np.full_like(t, sp.baseline)             # constant buffer
+            cc = np.full_like(t, sp.baseline)
+        else:                                             # general fallback
+            c_in = _species_inlet(t, sp, has_step, t_on, t_off, t_pulse,
+                                  exp.loop_uL, flow_profile)
+            signals, _ = run_train(seq, t, c_in, flow_profile,
+                                   read_indices=[uv_i, cond_i], c0=sp.baseline)
+            cu, cc = signals[uv_i], signals[cond_i]
+        conc_uv_by[sp.name] = conc_uv_by.get(sp.name, 0.0) + cu
+        conc_cond_by[sp.name] = conc_cond_by.get(sp.name, 0.0) + cc
 
     flow_trace = np.atleast_1d(as_flow_fn(flow_profile)(t)) * np.ones_like(t)
     total_uv = sum(conc_uv_by.values())
@@ -215,7 +257,8 @@ DEFAULT_CONFIG = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiments.yaml")
 
 _ALLOWED = {"name", "kind", "connection", "flow", "figure", "surface",
-            "c_tracer", "loop_uL", "inject_at", "description", "xmax", "species"}
+            "c_tracer", "loop_uL", "inject_at", "description", "xmax",
+            "species", "background"}
 
 
 def load_config(path: Optional[str] = None):
@@ -228,13 +271,19 @@ def load_config(path: Optional[str] = None):
         cfg = yaml.safe_load(fh)
 
     defaults = cfg.get("defaults", {}) or {}
+    background = defaults.get("background")               # equilibration buffer
     experiments = []
     for i, raw in enumerate(cfg.get("experiments", []) or []):
         unknown = set(raw) - _ALLOWED
         if unknown:
             raise ValueError(f"experiment #{i} ({raw.get('name','?')}) has "
                              f"unknown field(s): {sorted(unknown)}")
-        experiments.append(Experiment(**raw))
+        exp = Experiment(**raw)
+        # apply the default background buffer unless the experiment overrode it
+        # or defined its own species list
+        if exp.background is None:
+            exp.background = background
+        experiments.append(exp)
     return experiments, defaults
 
 

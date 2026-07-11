@@ -25,6 +25,12 @@ defaults:
   single_dpi: 300     # per-experiment high-resolution plot DPI
   single_size: [9.0, 6.0]   # per-experiment figure size, inches [w, h]
   n_time: 1400        # time samples per simulation
+  # Equilibration buffer present at baseline for single-tracer C*/V* runs.
+  # It is UV-transparent but conductive, so NaNO3 stepping in DISPLACES it and
+  # conductivity dips (the paper's "U" shape) while UV rises; for a pulse the
+  # buffer is a conductivity pedestal.  Set to null to model tracer-on-water.
+  # (Experiments that declare their own `species:` ignore this.)
+  background: {name: buffer, baseline: 1.0}
 
 experiments:
   # -------- Figure 3: pulse-injection calibration (260 uL, 0.5 M NaNO3) -----

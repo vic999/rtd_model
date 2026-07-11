@@ -222,7 +222,11 @@ Roughly in priority order for matching the paper and hardening the code:
    `SPECIES_COND`). The `TR1` demo reproduces the **opposite-sign** behaviour
    (conductivity drops while UV rises across the transition, both spike on the
    pulse); combined same-species experiments `V5/V6-2/V7` are also bundled.
-   Single-tracer experiments are unchanged. Write-up: `docs/MULTICOMPONENT.md`.
+   The C*/V* experiments now run against a default **equilibration buffer**
+   (`defaults.background` in the YAML), so their conductivity matches the paper
+   — a **U** for the V-series steps (buffer displaced by NaNO₃) and a pedestal
+   for the C-series pulses — at no extra solve (the buffer is the analytic
+   complement of the step). Write-up: `docs/MULTICOMPONENT.md`.
 3. **⬜ NOT YET — Inverse calibration (Eq. 10)** — wrap the model in
    `scipy.optimize` to fit `(l, η, α, Δc_max)` plus the detector constants to a
    measured run and compute R²; this is what reproduces Table 3 and closes the

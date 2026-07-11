@@ -98,6 +98,20 @@ where UV rises while conductivity drops — are supported; see
 [`docs/MULTICOMPONENT.md`](docs/MULTICOMPONENT.md) and the `TR1` experiment
 (`python3 rtd_cli.py plot --experiment TR1`).
 
+### Equilibration buffer (conductivity "U" shape)
+
+The C*/V* experiments run against a conductive, UV-transparent **equilibration
+buffer** (configured once via `defaults.background` in `experiments.yaml`).
+Because the buffer (~11.9 mS/cm) is more conductive than 0.05 M NaNO₃ (~6),
+stepping NaNO₃ in **displaces the buffer so conductivity dips** — the paper's
+**"U"** shape (V-series) — while UV rises; for a pulse the conductivity peak
+rides on the buffer **pedestal** (C-series). This reproduces the paper (compare
+Fig. 4 V1: green is a U, not an n) and adds **no extra ODE solve** (the buffer
+is the analytic complement of the NaNO₃ step). Set `background: null` for a
+tracer-on-water baseline. Note: with the linear conductivity model, 0.1 M NaNO₃
+≈ buffer, so V3/V4 show only a small conductivity change (see
+`docs/MULTICOMPONENT.md`).
+
 ## Command-line interface
 
 `rtd_cli.py` drives everything from experiments defined in `experiments.yaml`.

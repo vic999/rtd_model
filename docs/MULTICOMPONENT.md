@@ -83,6 +83,36 @@ For `TR1` the model reproduces the opposite-sign behaviour of the real data:
 - UV starts at ≈0 (buffer is transparent), **rises** to the NaNO₃ plateau, then
   spikes with the pulse.
 
+## The equilibration buffer (why the C*/V* conductivity has the paper's shape)
+
+In the real experiments the system is equilibrated with a conductive but
+UV-transparent **buffer** (ÄKTA pump A), and NaNO₃ is stepped/pulsed in against
+it. Because the buffer (~11.9 mS/cm) is *more* conductive than 0.05 M NaNO₃
+(~6 mS/cm), stepping NaNO₃ in **displaces the buffer and conductivity dips**
+(the paper's **"U"** shape), while UV **rises** — the two detectors move in
+opposite directions. A tracer-on-water model instead shows conductivity rising
+from zero (an **"n"**), which is wrong.
+
+So `experiments.yaml` sets a default background buffer that is added to every
+single-tracer C*/V* experiment:
+
+```yaml
+defaults:
+  background: {name: buffer, baseline: 1.0}   # set to null for tracer-on-water
+```
+
+This makes V-series conductivity a **U** and C-series conductivity a **peak on a
+~12 mS/cm pedestal**, matching the paper; UV is unchanged (the buffer is
+UV-transparent). It costs **no extra ODE solve**: through the linear train the
+displaced buffer is exactly the complement of the NaNO₃ step,
+`c_buffer = baseline·(1 − c_NaNO₃/c_step)`, and for a pulse it is a constant.
+
+**0.1 M caveat.** Kohlrausch's law is linear here, so 0.1 M NaNO₃ evaluates to
+~12.2 mS/cm — essentially equal to the buffer — and the V3/V4 conductivity shows
+only a small change rather than a deep U. Real molar conductivity falls with
+concentration, so 0.1 M would sit a little below the buffer; capturing that
+needs a concentration-dependent conductivity (not currently modelled).
+
 ## Caveats
 
 - **Superposition validity.** Independent per-species propagation is exact only
