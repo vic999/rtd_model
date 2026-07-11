@@ -4,7 +4,7 @@ This document started as planning only. Items that have since been **built** are
 marked inline. Nothing has been removed — the original plan text is kept for
 context, with a status tag added.
 
-Status legend: **✅ IMPLEMENTED** · **⬜ NOT YET**.
+Status legend: **✅ IMPLEMENTED** · **◐ PARTIAL** · **⬜ NOT YET** · **✖ CLOSED (won't do)**.
 
 It covers three things you asked about:
 
@@ -33,6 +33,10 @@ It covers three things you asked about:
 - **✅ Higher-fidelity DPF** — van Leer (MUSCL) flux-limited advection, default
   scheme, with a grid-convergence study (backlog item 6). Cuts numerical
   diffusion; see `docs/DISCRETIZATION.md`.
+- **✅ YAML experiments + CLI** — `experiments.yaml` + `rtd_cli.py`
+  (list/figure/plot/csv) with `--help` (backlog item 14); injection-point
+  modelling (item 12) and the parameter-provenance audit `docs/PARAMETERS.md`
+  (item 13); item 7 closed as superseded.
 
 ---
 
@@ -225,9 +229,19 @@ Roughly in priority order for matching the paper and hardening the code:
    `docs/DISCRETIZATION.md`. (A full discontinuous-Galerkin scheme was not
    needed — van Leer already reaches grid independence at ~160 cells where
    upwind is not converged at 640.)
-7. **⬜ NOT YET — Analytic transfer-function / convolution solver** for the linear
-   CST/DPF subsystem — exact and much faster; only the (nonlinear) filter then
-   needs ODE integration.
+7. **✖ CLOSED — WON'T DO (superseded) — Analytic transfer-function /
+   convolution solver** for the linear CST/DPF subsystem — exact and much
+   faster; only the (nonlinear) filter then needs ODE integration.
+   *Closed because it is superseded by other work.* A convolution/transfer-
+   function solve requires a **linear, time-invariant** subsystem, and two
+   implemented changes break that premise for the default configuration:
+   (a) the default DPF scheme is now the **van Leer flux limiter, which is
+   nonlinear** (item 6), and (b) **variable flow** (item 4) makes even the
+   linear units time-*varying*, so no single impulse-response kernel applies.
+   It would only help the narrow special case of constant flow **and**
+   `scheme="upwind"` **and** constant-ε filter, and the intended speed-up was
+   already delivered by item 10 (analytic sparse Jacobians + cached basis
+   responses). No further action.
 8. **⬜ NOT YET — Batch reproduction of Table 3** — loaders for all experiment
    CSVs and an automated R² table across every C/V experiment.
 9. **✅ IMPLEMENTED — Automated configuration & parameter detection** from a raw
@@ -246,13 +260,44 @@ Roughly in priority order for matching the paper and hardening the code:
     mean-residence-time, steady-state gain, constant-flow regression, and
     varying-flow mass conservation. Still missing: convergence tests and an
     automated CI runner.
-12. **⬜ NOT YET — Sample-pump vs loop injection** — model the two injection
+12. **✅ IMPLEMENTED — Sample-pump vs loop injection** — model the two injection
     points correctly (the paper notes stepwise injection used the sample pump,
     not the loop).
-13. **⬜ NOT YET — Units & parameter-provenance audit** — resolve the `Δc_max`
+    *Done:* (a) the two injection *mechanisms* are distinct — the loop pulse is
+    delivered by **fixed volume** (`pulse_inlet` integrates the flow, correct
+    under a ramp/saw-tooth) while the stepwise input is time-based
+    (`step_inlet`); and (b) `build_train(..., inject_at=...)` now sets the
+    injection *location*, dropping units upstream of it from the tracer path.
+    Pulse experiments inject at `"Loop"` (traverse the 260 µL loop); stepwise
+    experiments inject at `"5"` (the sample pump enters downstream of the loop,
+    so the loop hold-up is not traversed). Wired through the YAML experiment
+    config.
+13. **✅ IMPLEMENTED — Units & parameter-provenance audit** — resolve the `Δc_max`
     unit ambiguity and document where every constant comes from.
-14. **⬜ NOT YET — Experiment configuration files (YAML)** instead of hard-coded
-    `FIG3/FIG4` dicts; a small CLI to run any experiment by name.
+    *Done:* a complete audit table of every parameter — value, **units**, meaning
+    and provenance — is written in **`docs/PARAMETERS.md`** (calibrated model
+    params, geometry/dispersion, detector constants, numerics, flow profiles).
+    The `Δc_max` situation is explicitly analysed: only the composite
+    `k_m,eq·Δc_max` is reported by the paper, so its absolute scale cannot be
+    pinned without the un-tabulated `k_m,eq`; the code's saturated surrogate is
+    documented as such. The *audit* (documenting units/provenance and isolating
+    the one unresolvable value) is complete; actually resolving `Δc_max` needs
+    external data and lives in items 5/3.
+14. **✅ IMPLEMENTED — Experiment configuration files (YAML) + CLI** instead of
+    hard-coded `FIG3/FIG4` dicts; a small CLI to run any experiment by name.
+    *Assessment & delivery:* the hard-coded experiment lists were the main
+    obstacle to reuse — every new experiment meant editing `run_figures.py`.
+    Now all experiments (C* and V*) live in **`experiments.yaml`**; add one by
+    appending a line, no code change. `rtd/experiments.py` loads them into
+    `Experiment` objects and simulates them; `rtd/plots.py` renders them.
+    `run_figures.py` was refactored to a thin wrapper (backward-compatible
+    shims kept for `verify.py`). A new entry point **`rtd_cli.py`** provides:
+    `list` (all experiments, optionally by figure), `figure` (build Figure 3/4
+    grids), `plot` (per-experiment high-resolution PNG, DPI/size configurable
+    with sensible defaults), and `csv` (export the full simulated data). All
+    have `--help`; defaults come from the YAML `defaults:` block. This also
+    completed the injection-location wiring for item 12 (pulse→loop,
+    step→pump node).
 15. **⬜ NOT YET — Temperature/viscosity dependence** — conductivity drifts
     ~2 %/°C and `D_ax` depends on viscosity; relevant if matching absolute
     magnitudes.

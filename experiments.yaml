@@ -1,0 +1,47 @@
+# Experiment configuration for the RTD model (improvement #14).
+#
+# Each experiment reproduces one panel of Chen et al. (2024), Figure 3 (pulse,
+# "C" series) or Figure 4 (stepwise, "V" series).  Add new experiments by
+# appending to the `experiments:` list; the CLI (`rtd_cli.py`) discovers them
+# automatically.
+#
+# Fields per experiment:
+#   name         short id (e.g. C1, V2-3)              [required]
+#   figure       3 or 4 -> which multi-panel grid it belongs to (null = neither)
+#   kind         "pulse" or "step"                     [required]
+#   connection   "bypass" | "connector" | "filter"     [required]
+#   flow         set-point flow rate, mL/min           [required]
+#   surface      filter surface area cm^2 (3/10/100), or null for no filter
+#   c_tracer     tracer concentration, mol/L (NaNO3)   [default 0.5]
+#   loop_uL      sample-loop volume, uL (pulse only)   [default 260]
+#   inject_at    injection unit label, or null -> "Loop" for pulse / "5" for step
+#   description  free text
+#   xmax         explicit x-axis limit (s), or null    [optional]
+
+defaults:
+  style: paper        # "paper" (stacked) or "overlay"
+  focus: false        # tight x-axis auto-crop
+  dpi: 130            # figure/grid DPI
+  single_dpi: 300     # per-experiment high-resolution plot DPI
+  single_size: [9.0, 6.0]   # per-experiment figure size, inches [w, h]
+  n_time: 1400        # time samples per simulation
+
+experiments:
+  # -------- Figure 3: pulse-injection calibration (260 uL, 0.5 M NaNO3) -----
+  - {name: C1,   figure: 3, kind: pulse, connection: bypass,    flow: 1.0,  surface: null, description: "bypass, 1 mL/min"}
+  - {name: C2-1, figure: 3, kind: pulse, connection: connector, flow: 0.35, surface: null, description: "connector, 0.35 mL/min"}
+  - {name: C2-2, figure: 3, kind: pulse, connection: connector, flow: 1.0,  surface: null, description: "connector, 1 mL/min"}
+  - {name: C2-3, figure: 3, kind: pulse, connection: connector, flow: 10.0, surface: null, description: "connector, 10 mL/min"}
+  - {name: C3-1, figure: 3, kind: pulse, connection: filter,    flow: 0.35, surface: 3,    description: "3 cm2 filter, 0.35 mL/min"}
+  - {name: C3-2, figure: 3, kind: pulse, connection: filter,    flow: 1.0,  surface: 10,   description: "10 cm2 filter, 1 mL/min"}
+  - {name: C3-3, figure: 3, kind: pulse, connection: filter,    flow: 10.0, surface: 100,  description: "100 cm2 filter, 10 mL/min"}
+
+  # -------- Figure 4: stepwise validation -----------------------------------
+  - {name: V1,   figure: 4, kind: step, connection: bypass, flow: 10.0, surface: null, c_tracer: 0.05, description: "bypass, 0.05 M, 10 mL/min"}
+  - {name: V3,   figure: 4, kind: step, connection: bypass, flow: 10.0, surface: null, c_tracer: 0.1,  description: "bypass, 0.1 M, 10 mL/min"}
+  - {name: V2-1, figure: 4, kind: step, connection: filter, flow: 0.35, surface: 3,    c_tracer: 0.05, description: "3 cm2, 0.05 M, 0.35 mL/min"}
+  - {name: V2-2, figure: 4, kind: step, connection: filter, flow: 1.0,  surface: 10,   c_tracer: 0.05, description: "10 cm2, 0.05 M, 1 mL/min"}
+  - {name: V2-3, figure: 4, kind: step, connection: filter, flow: 10.0, surface: 100,  c_tracer: 0.05, description: "100 cm2, 0.05 M, 10 mL/min"}
+  - {name: V4-1, figure: 4, kind: step, connection: filter, flow: 0.35, surface: 3,    c_tracer: 0.1,  description: "3 cm2, 0.1 M, 0.35 mL/min"}
+  - {name: V4-2, figure: 4, kind: step, connection: filter, flow: 1.0,  surface: 10,   c_tracer: 0.1,  description: "10 cm2, 0.1 M, 1 mL/min"}
+  - {name: V4-3, figure: 4, kind: step, connection: filter, flow: 10.0, surface: 100,  c_tracer: 0.1,  description: "100 cm2, 0.1 M, 10 mL/min"}

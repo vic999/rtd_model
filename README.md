@@ -58,8 +58,12 @@ rtd_model/
 │   ├── flow.py          # FlowProfile: Constant/Ramp/DelayedStep/Sawtooth/FromData
 │   ├── detectors.py     # Beer's-law UV (mAU) + Kohlrausch conductivity (mS/cm)
 │   ├── data.py          # ÄKTA UNICORN CSV loader + event detection
+│   ├── experiments.py   # Experiment model + YAML loader + simulate()
+│   ├── plots.py         # panel/grid/single-plot + CSV export
 │   └── simulate.py      # run_train() + r2_score()
-├── run_figures.py       # reproduces Figure 3 (pulse) and Figure 4 (stepwise)
+├── experiments.yaml     # experiment definitions (C*/V*); add your own here
+├── rtd_cli.py           # command-line entry point (list/figure/plot/csv)
+├── run_figures.py       # thin wrapper: reproduces Figure 3 and Figure 4
 ├── compare_data.py      # compare model vs a real ÄKTA run; infer configuration
 ├── demo_flow_profiles.py# shows variable flow reshaping the RTD response
 ├── convergence_study.py # DPF grid-convergence: van Leer vs upwind
@@ -68,11 +72,41 @@ rtd_model/
 │   ├── NUMERICS.md      # how every equation is discretized and solved
 │   ├── DISCRETIZATION.md# van Leer flux-limited DPF scheme + numerical diffusion
 │   ├── FLOW_PROFILES.md # variable flow: how it works and how to configure it
+│   ├── PARAMETERS.md    # every constant: value, units, provenance
 │   └── PLANS.md         # design plans + improvement backlog
 ├── requirements.txt
 └── README.md
 ```
 
+## How to run
+
+```bash
+pip install -r requirements.txt
+python3 rtd_cli.py --help  # command-line interface (recommended)
+python3 run_figures.py     # -> figure3.png calibration, figure4.png validation
+python3 verify.py          # -> prints PASS/FAIL on the conservation checks
+```
+
+## Command-line interface
+
+`rtd_cli.py` drives everything from experiments defined in `experiments.yaml`.
+Add a new experiment by appending one line to that file — the CLI finds it
+automatically. Four sub-commands, each with `--help`:
+
+```bash
+python3 rtd_cli.py list                              # list all experiments (C*, V*)
+python3 rtd_cli.py list --figure 3                   # just the Figure-3 set
+python3 rtd_cli.py figure --which both --style paper # build Figure 3 and 4 grids
+python3 rtd_cli.py plot --experiment C1 V2-3 --dpi 300   # hi-res per-experiment PNGs
+python3 rtd_cli.py plot --experiment all --out plots     # all, into plots/
+python3 rtd_cli.py csv  --experiment C3-3 --out data     # export the full data as CSV
+```
+
+Resolution and layout are configurable (`--dpi`, `--size W H`, `--style
+paper|overlay`, `--focus/--no-focus`); sensible defaults come from the
+`defaults:` block of `experiments.yaml` (per-experiment plots default to 300
+DPI, 9×6 in). CSV output contains time, UV (mAU), conductivity (mS/cm), flow
+(mL/min) and the raw tracer concentrations.
 ## Detector signals (UV and conductivity)
 
 The RTD solvers produce a tracer **concentration** `c(t)`. `rtd/detectors.py`
@@ -172,13 +206,7 @@ The solvers are tuned so results are unchanged but produced faster:
 Net effect: `run_figures.py` (both figures) dropped from ~60 s to ~34 s, and the
 heavy filter panels from ~7–8 s to ~3 s each — with identical curves and R².
 
-## How to run
 
-```bash
-pip install -r requirements.txt
-python3 run_figures.py     # -> figure3_calibration.png, figure4_validation.png
-python3 verify.py          # -> prints PASS/FAIL on the conservation checks
-```
 
 ## Validation against real instrument data
 

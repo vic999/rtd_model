@@ -132,7 +132,7 @@ DETECTOR_CHAIN = ["VF-C", "6", "U9-D", "7", "C9"]
 
 
 def build_train(connection: str, surface_cm2: Optional[int] = None,
-                **filter_kwargs):
+                inject_at: Optional[str] = None, **filter_kwargs):
     """
     Assemble an ordered list of (name, propagator) for a given connection.
 
@@ -140,6 +140,14 @@ def build_train(connection: str, surface_cm2: Optional[int] = None,
         "bypass"     -- (a) AKTA bypass: loop + detector chain, no filter
         "connector"  -- (b) connector in place of the filter
         "filter"     -- (c) batch operation with one filter (needs surface_cm2)
+
+    inject_at : optional unit label at which the tracer is introduced
+        (improvement #12).  Units *before* this one are dropped from the tracer
+        path, so the two physical injection points are modelled distinctly:
+          * loop pulse  -> inject_at="Loop" (default): tracer traverses the
+            260 uL sample loop and everything downstream;
+          * sample-pump step -> inject_at="5": the pump injects downstream of
+            the loop, so the loop's hold-up is NOT traversed.
 
     Returns a list of objects exposing ``.propagate(t, c_in, flow)`` and a
     parallel list of names, plus the indices of the UV (U9-D) and conductivity
@@ -167,6 +175,14 @@ def build_train(connection: str, surface_cm2: Optional[int] = None,
 
     for lbl in DETECTOR_CHAIN:
         seq.append(make_unit(lbl)); names.append(lbl)
+
+    # Drop units upstream of the injection point (the tracer never sees them).
+    if inject_at is not None:
+        if inject_at not in names:
+            raise ValueError(f"inject_at={inject_at!r} not a unit in this train "
+                             f"(available: {names})")
+        start = names.index(inject_at)
+        seq, names = seq[start:], names[start:]
 
     uv_idx = names.index("U9-D")
     cond_idx = names.index("C9")

@@ -13,6 +13,8 @@ from .simulate import run_train, r2_score
 from .flow import (FlowProfile, Constant, Ramp, DelayedStep, Sawtooth,
                    FromData, Piecewise, as_flow_fn, representative_flow)
 from .detectors import beer_uv, kohlrausch_cond, UV_NANO3, COND_NANO3
+from .experiments import (Experiment, simulate, load_config, find_experiment,
+                          experiment_flow)
 
 __all__ = [
     "dpf_outlet", "cst_outlet", "DPF_SCHEME", "USE_NUMBA",
@@ -23,4 +25,5 @@ __all__ = [
     "FlowProfile", "Constant", "Ramp", "DelayedStep", "Sawtooth",
     "FromData", "Piecewise", "as_flow_fn", "representative_flow",
     "beer_uv", "kohlrausch_cond", "UV_NANO3", "COND_NANO3",
+    "Experiment", "simulate", "load_config", "find_experiment", "experiment_flow",
 ]
