@@ -84,6 +84,47 @@ comes from NaNO₃'s molar conductivity, the UV one is an illustrative calibrati
 (magnitude only) pending a fit. `run_figures.py` plots UV, conductivity and flow
 on three separate axes.
 
+## Plot style
+
+`run_figures.py` has a `PLOT_STYLE` flag (default `"paper"`):
+
+- `"paper"` — the Chen et al. (2024) layout: three stacked sub-panels per
+  experiment sharing the time axis — UV (mAU, blue) on top, flow rate (mL/min,
+  orange) in the middle, conductivity (mS/cm, green) at the bottom.
+- `"overlay"` — compact: UV, conductivity and flow overlaid on three y-axes of a
+  single panel per experiment.
+
+Set the constant in the file, or override per run on the command line:
+
+```bash
+python3 run_figures.py            # uses PLOT_STYLE (default "paper")
+python3 run_figures.py overlay    # force the overlay layout
+```
+
+### X-axis auto-focus
+
+The full window is always simulated (tails and mass balance stay intact) but the
+plot is cropped to where the signal actually lives — like the paper's tight
+x-axes — instead of trailing a long flat tail. It's controlled by flags near the
+top of `run_figures.py`:
+
+- `FOCUS_ENABLED` (default `True`) — turn the auto-crop on/off.
+- `FOCUS_FRAC` (default `0.02`) — a signal counts as "back to baseline" below
+  this fraction of its peak.
+- `FOCUS_MARGIN` (default `0.15`) — head-room added to the right of the active
+  region.
+
+Disable it, or force a specific limit per experiment:
+
+```bash
+python3 run_figures.py paper nofocus     # show the whole simulated window
+```
+
+```python
+# In a FIG3/FIG4 entry, add "xmax" to override the auto-crop for that panel:
+("C1  (bypass, 1 mL/min)", dict(connection="bypass", flow=1.0, xmax=60.0)),
+```
+
 ## Variable flow rate
 
 Flow may be a constant number **or** a `FlowProfile` (`Constant`, `Ramp`,
@@ -170,11 +211,14 @@ The `r2_score` function is already provided and matches
 
 These are documented so the reconstruction is auditable:
 
-- **Flow rate.** Time-varying flow is now supported (`rtd/flow.py`): the solvers
-  evaluate `V̇(t)` inside the equations, so the paper's delayed pump ramp and
-  high-flow saw-tooth can be modelled, and a measured flow trace can be replayed
-  (`FromData`). The reproduced Figures 3/4 still use a constant set-point flow
-  for clarity; see `docs/FLOW_PROFILES.md` and `demo_flow_profiles.py`.
+- **Flow rate.** Time-varying flow is supported (`rtd/flow.py`): the solvers
+  evaluate `V̇(t)` inside the equations, and a measured flow trace can be
+  replayed (`FromData`). The reproduced Figures 3/4 now drive each experiment
+  with the **paper's flow pattern** (`experiment_flow` in `run_figures.py`): a
+  delayed pump ramp to the set-point at low flow (the "gradient pattern",
+  Fig 3a,b) and a saw-tooth at 10 mL/min (flow interruption, Fig 3g, 4a–c,f,i,l).
+  The saw-tooth amplitude/period are illustrative (the paper used the measured
+  flow trace; exact values are not tabulated). See `docs/FLOW_PROFILES.md`.
 - **Film-resistance ε(t) (Eqs. 5–9).** This is the most under-specified part of
   the paper: Eq. 8 needs the equilibration-buffer driving force `Δc_eq` and the
   mass-transfer scale `k_m,eq`, neither of which is tabulated, and with the
