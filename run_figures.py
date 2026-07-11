@@ -183,10 +183,14 @@ PLOT_STYLE = "paper"
 # tight x-axes -- instead of showing a long flat tail.
 #
 # The crop is the last time UV or conductivity is still above FOCUS_FRAC of its
-# own peak, plus a FOCUS_MARGIN fraction of head-room.  Set FOCUS_ENABLED=False
-# to show the whole simulated window, or give an experiment an explicit
-# "xmax" in its FIG dict to override the auto-crop for that panel.
-FOCUS_ENABLED = True
+# own peak, plus a FOCUS_MARGIN fraction of head-room.
+#
+# Default: FOCUS_ENABLED = False -> show the whole simulated window (the time
+# windows are already sized to the dynamics, so the curves fill the panels).
+# Set FOCUS_ENABLED = True (or pass "focus" on the command line) to additionally
+# crop each panel tightly to its active region.  A per-experiment "xmax" in a
+# FIG dict always overrides both.
+FOCUS_ENABLED = False
 FOCUS_FRAC = 0.02       # signal considered "back to baseline" below 2 % of peak
 FOCUS_MARGIN = 0.15     # add 15 % head-room to the right of the active region
 
@@ -344,8 +348,8 @@ if __name__ == "__main__":
     import sys
     # Optional CLI overrides (any order):
     #   style:  'paper' | 'overlay'
-    #   focus:  'focus' | 'nofocus'   (toggles the x-axis auto-focus)
-    # e.g.  python3 run_figures.py overlay nofocus
+    #   focus:  'focus' | 'nofocus'   (x-axis auto-focus; default is nofocus)
+    # e.g.  python3 run_figures.py overlay focus
     args = [a.lower() for a in sys.argv[1:]]
     style = next((a for a in args if a in ("paper", "overlay")), PLOT_STYLE)
     if "nofocus" in args:

@@ -30,6 +30,9 @@ It covers three things you asked about:
 - **✅ Performance** — analytic sparse Jacobians, vectorised permeate RHS,
   cached basis responses, optional Numba, and a window-sizing fix (backlog
   item 10). Same results, roughly 2× faster.
+- **✅ Higher-fidelity DPF** — van Leer (MUSCL) flux-limited advection, default
+  scheme, with a grid-convergence study (backlog item 6). Cuts numerical
+  diffusion; see `docs/DISCRETIZATION.md`.
 
 ---
 
@@ -213,9 +216,15 @@ Roughly in priority order for matching the paper and hardening the code:
 5. **⬜ NOT YET — Physically-scaled film resistance ε(t)** — replace the current
    saturated surrogate with the true Graetz–Lévêque scaling once `k_m,eq` (and
    the equilibration driving force) are pinned from data or literature.
-6. **⬜ NOT YET — Higher-fidelity DPF discretization** — the flux-limited /
-   discontinuous Galerkin scheme the paper used, to cut numerical diffusion; add
-   a grid- and tolerance-convergence study to prove grid independence.
+6. **✅ IMPLEMENTED — Higher-fidelity DPF discretization** — a flux-limited
+   **van Leer (MUSCL)** advection scheme (conservative total-flux form,
+   Danckwerts inlet), selectable via `DPF_SCHEME` / `scheme=` and default for all
+   conduits; first-order upwind remains available. Cuts numerical diffusion so
+   the modelled dispersion matches the physical `Pe = 0.5`, mass and MRT
+   preserved. Grid-convergence study in `convergence_study.py`; full write-up in
+   `docs/DISCRETIZATION.md`. (A full discontinuous-Galerkin scheme was not
+   needed — van Leer already reaches grid independence at ~160 cells where
+   upwind is not converged at 640.)
 7. **⬜ NOT YET — Analytic transfer-function / convolution solver** for the linear
    CST/DPF subsystem — exact and much faster; only the (nonlinear) filter then
    needs ODE integration.

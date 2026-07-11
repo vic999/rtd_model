@@ -36,7 +36,9 @@ makes the through-flow volume fraction `ε` time-dependent.
 > **How each equation is actually discretized and integrated is documented in
 > [`docs/NUMERICS.md`](docs/NUMERICS.md)** — spatial schemes, boundary-condition
 > handling, the BDF time integrator, the `max_step` logic, and how the units are
-> chained.
+> chained. The DPF advection uses a higher-order **van Leer (MUSCL)** flux-limited
+> scheme by default (low numerical diffusion); see
+> [`docs/DISCRETIZATION.md`](docs/DISCRETIZATION.md) and `convergence_study.py`.
 
 Calibrated parameters from the paper are the defaults:
 
@@ -60,9 +62,11 @@ rtd_model/
 ├── run_figures.py       # reproduces Figure 3 (pulse) and Figure 4 (stepwise)
 ├── compare_data.py      # compare model vs a real ÄKTA run; infer configuration
 ├── demo_flow_profiles.py# shows variable flow reshaping the RTD response
+├── convergence_study.py # DPF grid-convergence: van Leer vs upwind
 ├── verify.py            # physics checks (mass balance, MRT, gain, flow, ordering)
 ├── docs/
 │   ├── NUMERICS.md      # how every equation is discretized and solved
+│   ├── DISCRETIZATION.md# van Leer flux-limited DPF scheme + numerical diffusion
 │   ├── FLOW_PROFILES.md # variable flow: how it works and how to configure it
 │   └── PLANS.md         # design plans + improvement backlog
 ├── requirements.txt
@@ -103,25 +107,30 @@ python3 run_figures.py overlay    # force the overlay layout
 
 ### X-axis auto-focus
 
-The full window is always simulated (tails and mass balance stay intact) but the
-plot is cropped to where the signal actually lives — like the paper's tight
-x-axes — instead of trailing a long flat tail. It's controlled by flags near the
-top of `run_figures.py`:
+The full window is always simulated (tails and mass balance stay intact). By
+**default the whole window is shown** (`nofocus`) — the time windows are already
+sized to the dynamics, so the curves fill the panels. Optionally, the plot can
+be cropped more tightly to where the signal actually lives (the last time UV or
+conductivity is still above a small fraction of its peak). Controlled by flags
+near the top of `run_figures.py`:
 
-- `FOCUS_ENABLED` (default `True`) — turn the auto-crop on/off.
+- `FOCUS_ENABLED` (**default `False`**) — set `True` to enable the tight
+  auto-crop.
 - `FOCUS_FRAC` (default `0.02`) — a signal counts as "back to baseline" below
   this fraction of its peak.
 - `FOCUS_MARGIN` (default `0.15`) — head-room added to the right of the active
   region.
 
-Disable it, or force a specific limit per experiment:
+Enable the tight crop for a run, or force a specific limit per experiment:
 
 ```bash
-python3 run_figures.py paper nofocus     # show the whole simulated window
+python3 run_figures.py            # default: full window (nofocus)
+python3 run_figures.py focus      # tightly crop each panel to its active region
 ```
 
 ```python
-# In a FIG3/FIG4 entry, add "xmax" to override the auto-crop for that panel:
+# In a FIG3/FIG4 entry, add "xmax" to set an explicit x-limit for that panel
+# (overrides both nofocus and focus):
 ("C1  (bypass, 1 mL/min)", dict(connection="bypass", flow=1.0, xmax=60.0)),
 ```
 
@@ -141,10 +150,12 @@ The solvers are tuned so results are unchanged but produced faster:
 
 - **Analytic sparse Jacobian.** BDF is implicit and needs a Jacobian each step.
   Instead of letting SciPy estimate it by finite differences, the CST supplies
-  its 1×1 Jacobian, the DPF its exact **tridiagonal** Jacobian (`scipy.sparse`),
-  and the constant-ε filter its exact block Jacobian (a sparsity pattern is
-  given when the film-resistance term makes it nonlinear). Validated against a
-  finite-difference reference to ~1e-10.
+  its 1×1 Jacobian, the first-order upwind DPF its exact **tridiagonal**
+  Jacobian (`scipy.sparse`, validated to ~1e-10), and the constant-ε filter its
+  exact block Jacobian. Where the operator is nonlinear (the default van Leer
+  DPF scheme, or the film-resistance filter term) a **banded sparsity pattern**
+  is supplied instead, so BDF still builds a cheap grouped finite-difference
+  Jacobian rather than a dense one.
 - **Vectorised right-hand sides.** The filter's permeate model now computes all
   `l` radial stages with array operations instead of a Python loop.
 - **Optional Numba.** If `numba` is installed, the DPF stencil is JIT-compiled

@@ -5,7 +5,7 @@ Reproduction of the mechanistic residence-time-distribution model described in
 Biotechnology and Bioengineering 121:1876-1888 (DOI 10.1002/bit.28696).
 """
 
-from .units import dpf_outlet, cst_outlet
+from .units import dpf_outlet, cst_outlet, DPF_SCHEME, USE_NUMBA
 from .filter_model import filter_outlet, permeate_space_outlet
 from .equipment import build_train, make_unit, Unit, Filter, PERIPHERAL, FILTERS
 from .injection import pulse_inlet, step_inlet, combined_inlet
@@ -15,7 +15,7 @@ from .flow import (FlowProfile, Constant, Ramp, DelayedStep, Sawtooth,
 from .detectors import beer_uv, kohlrausch_cond, UV_NANO3, COND_NANO3
 
 __all__ = [
-    "dpf_outlet", "cst_outlet",
+    "dpf_outlet", "cst_outlet", "DPF_SCHEME", "USE_NUMBA",
     "filter_outlet", "permeate_space_outlet",
     "build_train", "make_unit", "Unit", "Filter", "PERIPHERAL", "FILTERS",
     "pulse_inlet", "step_inlet", "combined_inlet",
