@@ -37,6 +37,11 @@ It covers three things you asked about:
   (list/figure/plot/csv) with `--help` (backlog item 14); injection-point
   modelling (item 12) and the parameter-provenance audit `docs/PARAMETERS.md`
   (item 13); item 7 closed as superseded.
+- **✅ Multi-component tracers** — species-resolved propagation + per-species
+  detectors; opposite-sign transition demo `TR1` (item 2); `docs/MULTICOMPONENT.md`.
+- **✅ Test suite + CI** — `tests/` (pytest) + GitHub Actions (item 11).
+- **✅ Packaging & typing** — `pyproject.toml`, `rtd` console entry point,
+  `py.typed` (item 17).
 
 ---
 
@@ -206,11 +211,18 @@ Roughly in priority order for matching the paper and hardening the code:
 1. **✅ IMPLEMENTED — Detector model (Beer/Kohlrausch)** — the §1 fix, as its own
    module (`rtd/detectors.py`). Highest value: makes UV and conductivity
    physically distinct and paper-like.
-2. **⬜ NOT YET — Multi-component tracer support** — propagate tris-acetate and
-   NaNO₃ separately and combine per detector. Needed to reproduce the transition
-   / combined experiments and the opposite-sign UV vs conductivity behaviour in
-   the real data. (The detector layer already supports multiple species via a
-   dict; what's missing is species-resolved propagation.)
+2. **✅ IMPLEMENTED — Multi-component tracer support** — propagate tris-acetate
+   and NaNO₃ separately and combine per detector.
+   *Done:* an experiment can declare a `species:` list (each with
+   baseline/step/pulse components); `simulate` propagates each species
+   independently through the same train (superposition — valid at constant ε)
+   with `run_train(c0=baseline)` so a background buffer starts pre-equilibrated,
+   then forms UV and conductivity as per-species weighted sums
+   (`detectors.uv_from_species` / `cond_from_species`, with `SPECIES_UV`/
+   `SPECIES_COND`). The `TR1` demo reproduces the **opposite-sign** behaviour
+   (conductivity drops while UV rises across the transition, both spike on the
+   pulse); combined same-species experiments `V5/V6-2/V7` are also bundled.
+   Single-tracer experiments are unchanged. Write-up: `docs/MULTICOMPONENT.md`.
 3. **⬜ NOT YET — Inverse calibration (Eq. 10)** — wrap the model in
    `scipy.optimize` to fit `(l, η, α, Δc_max)` plus the detector constants to a
    measured run and compute R²; this is what reproduces Table 3 and closes the
@@ -256,10 +268,15 @@ Roughly in priority order for matching the paper and hardening the code:
     representative flow was read during the pump ramp), which was the largest
     single speed-up. Results unchanged; `run_figures.py` ~60 s → ~34 s, heavy
     filter panels ~7–8 s → ~3 s.
-11. **◐ PARTIAL — Test suite + CI** — `verify.py` covers mass conservation,
-    mean-residence-time, steady-state gain, constant-flow regression, and
-    varying-flow mass conservation. Still missing: convergence tests and an
-    automated CI runner.
+11. **✅ IMPLEMENTED — Test suite + CI** — `verify.py` still runs the physics
+    checks, and there is now a proper **pytest** suite in `tests/` covering
+    mass conservation and MRT (CST + both DPF schemes), constant-flow
+    regression, varying-flow mass conservation, **DPF grid convergence** (van
+    Leer converges where upwind does not), single-species backward
+    compatibility, **multi-component opposite-sign behaviour**, injection-point
+    routing, and CLI/config plumbing. A **GitHub Actions** workflow
+    (`.github/workflows/ci.yml`) runs `pytest` + `verify.py` on Python
+    3.10/3.11/3.12.
 12. **✅ IMPLEMENTED — Sample-pump vs loop injection** — model the two injection
     points correctly (the paper notes stepwise injection used the sample pump,
     not the loop).
@@ -303,5 +320,13 @@ Roughly in priority order for matching the paper and hardening the code:
     magnitudes.
 16. **⬜ NOT YET — Sensitivity / uncertainty analysis** — how RTD responds to each
     parameter, to guide calibration and report confidence bands.
-17. **⬜ NOT YET — Packaging & typing** — `pyproject.toml`, installable package,
-    complete type hints and docstring coverage.
+17. **✅ IMPLEMENTED — Packaging & typing** — `pyproject.toml`, installable
+    package, type hints and docstring coverage.
+    *Done:* `pyproject.toml` (setuptools) makes the project pip-installable
+    (`pip install -e .`), declares dependencies + optional extras (`speed` →
+    numba, `dev` → pytest), configures pytest, and adds a **`rtd` console
+    entry point** → `rtd_cli:main`. The `rtd` package ships a `py.typed`
+    marker (PEP 561); the public API (dataclasses, `simulate`, `load_config`,
+    detector/flow functions) carries type hints and docstrings. (Exhaustive
+    annotation of every internal helper is not claimed, but the shipped types
+    cover the public surface.)

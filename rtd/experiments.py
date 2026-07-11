@@ -22,7 +22,7 @@ import yaml
 from .equipment import build_train, FILTERS
 from .flow import DelayedStep, Sawtooth, as_flow_fn
 from .injection import pulse_inlet, step_inlet
-from .detectors import beer_uv, kohlrausch_cond
+from .detectors import uv_from_species, cond_from_species
 from .simulate import run_train
 
 # --------------------------------------------------------------------------
@@ -46,29 +46,62 @@ def experiment_flow(setpoint):
 # Experiment model
 # --------------------------------------------------------------------------
 @dataclass
+class Species:
+    """
+    One chemical species in an experiment (improvement #2).
+
+    Its inlet is the sum of up to three components (any may be zero):
+      * ``baseline`` -- concentration present *outside* the step "on" window
+                        (e.g. an equilibration buffer that is displaced);
+      * ``step``     -- concentration during the step "on" window;
+      * ``pulse``    -- a bolus of this concentration injected during steady state.
+    ``name`` must match a key in ``detectors.SPECIES_UV`` / ``SPECIES_COND``.
+    """
+    name: str
+    baseline: float = 0.0
+    step: float = 0.0
+    pulse: float = 0.0
+
+
+@dataclass
 class Experiment:
     name: str
-    kind: str                       # "pulse" | "step"
-    connection: str                 # "bypass" | "connector" | "filter"
-    flow: float                     # set-point mL/min
+    kind: str = "pulse"             # "pulse" | "step" (single-species shorthand)
+    connection: str = "bypass"      # "bypass" | "connector" | "filter"
+    flow: float = 1.0               # set-point mL/min
     figure: Optional[int] = None    # 3, 4, or None
     surface: Optional[int] = None   # filter cm^2 (3/10/100) or None
-    c_tracer: float = 0.5           # mol/L
+    c_tracer: float = 0.5           # mol/L (single-species shorthand)
     loop_uL: float = 260.0          # sample-loop volume (pulse)
     inject_at: Optional[str] = None # unit label; default by kind
     description: str = ""
     xmax: Optional[float] = None    # explicit x-limit (s)
+    species: Optional[list] = None  # multi-species; None -> single NaNO3 tracer
 
     @property
     def title(self) -> str:
         return f"{self.name}  ({self.description})" if self.description else self.name
+
+    def species_list(self):
+        """Resolve to a list[Species].  If none are declared, synthesise a
+        single NaNO3 species from ``kind`` / ``c_tracer`` (backward compatible)."""
+        if self.species:
+            return [s if isinstance(s, Species) else Species(**s)
+                    for s in self.species]
+        if self.kind == "pulse":
+            return [Species("NaNO3", pulse=self.c_tracer)]
+        return [Species("NaNO3", step=self.c_tracer)]
+
+    @property
+    def has_step(self) -> bool:
+        return any(s.step or s.baseline for s in self.species_list())
 
     @property
     def injection_node(self) -> str:
         if self.inject_at:
             return self.inject_at
         # loop pulse traverses the sample loop; sample-pump step enters after it
-        return "Loop" if self.kind == "pulse" else "5"
+        return "5" if self.has_step else "Loop"
 
 
 def _train_holdup_uL(seq):
@@ -90,20 +123,45 @@ def _rep_flow(flow):
     return float(pos.max()) if pos.size else float(np.max(v))
 
 
+def _species_inlet(t, sp: Species, has_step, t_on, t_off, t_pulse,
+                   loop_uL, flow_profile):
+    """Build one species' inlet trace = baseline + step + pulse components."""
+    c = np.zeros_like(t)
+    if has_step:
+        on = (t >= t_on) & (t < t_off)
+        if sp.step:
+            c[on] += sp.step
+        if sp.baseline:                       # present when NOT in the on-window
+            c[~on] += sp.baseline
+    elif sp.baseline:                         # no step window -> baseline everywhere
+        c += sp.baseline
+    if sp.pulse:
+        c = c + pulse_inlet(t, loop_uL, flow_profile, sp.pulse, t_start=t_pulse)
+    return c
+
+
 def simulate(exp: Experiment, n_time: int = 1400,
              pulse_span: float = 2.0, step_span: float = 3.0):
     """
-    Run the model for one experiment.
+    Run the model for one experiment (single- or multi-species, improvement #2).
+
+    Each species is propagated independently through the same train
+    (superposition — valid because the units are linear and the default filter
+    uses a constant through-flow fraction), then the two detector signals are
+    formed as per-species weighted sums (Beer's / Kohlrausch's law).
 
     Returns a dict of equal-length arrays:
         t          time (s)
-        uv_mAU     UV 280 signal (Beer's law)
-        cond_mScm  conductivity signal (Kohlrausch's law)
+        uv_mAU     UV 280 signal (mAU)
+        cond_mScm  conductivity signal (mS/cm)
         flow_mLmin flow rate driving the model
-        conc_uv    raw tracer concentration at the UV monitor (mol/L)
-        conc_cond  raw tracer concentration at the conductivity monitor (mol/L)
-    plus scalar ``xmax`` (explicit x-limit or None).
+        conc_uv    total tracer concentration at the UV monitor (mol/L)
+        conc_cond  total tracer concentration at the conductivity monitor (mol/L)
+        species    {name: concentration-at-UV-monitor} per species (mol/L)
+    plus scalar ``xmax``.
     """
+    species = exp.species_list()
+    has_step = exp.has_step
     flow_profile = experiment_flow(exp.flow)
     seq, names, uv_i, cond_i = build_train(
         exp.connection, surface_cm2=exp.surface, inject_at=exp.injection_node)
@@ -111,30 +169,41 @@ def simulate(exp: Experiment, n_time: int = 1400,
     holdup = _train_holdup_uL(seq)
     Vdot = _rep_flow(flow_profile) * 1000.0 / 60.0        # uL/s
     mean_res = holdup / Vdot
+    pulse_w = exp.loop_uL / Vdot
 
-    if exp.kind == "pulse":
-        pulse_w = exp.loop_uL / Vdot
-        t_end = pulse_w + pulse_span * mean_res
-        t = np.linspace(0.0, t_end, n_time)
-        c_in = pulse_inlet(t, exp.loop_uL, flow_profile, exp.c_tracer, t_start=0.0)
-    elif exp.kind == "step":
+    if has_step:
         t_on = 0.5 * mean_res
         t_off = t_on + step_span * mean_res
         t_end = t_off + step_span * mean_res
-        t = np.linspace(0.0, t_end, n_time)
-        c_in = step_inlet(t, exp.c_tracer, t_on=t_on, t_off=t_off)
+        t_pulse = t_on + 0.5 * (t_off - t_on)             # pulse fires mid-plateau
     else:
-        raise ValueError(f"Unknown experiment kind {exp.kind!r} (use pulse/step)")
+        t_on = t_off = None
+        t_pulse = 0.0
+        t_end = pulse_w + pulse_span * mean_res
+    t = np.linspace(0.0, t_end, n_time)
 
-    signals, _ = run_train(seq, t, c_in, flow_profile, read_indices=[uv_i, cond_i])
+    conc_uv_by, conc_cond_by = {}, {}
+    for sp in species:
+        c_in = _species_inlet(t, sp, has_step, t_on, t_off, t_pulse,
+                              exp.loop_uL, flow_profile)
+        # Start the train pre-equilibrated with this species' baseline (so a
+        # background buffer is already present at t=0, not filling from empty).
+        signals, _ = run_train(seq, t, c_in, flow_profile,
+                               read_indices=[uv_i, cond_i], c0=sp.baseline)
+        conc_uv_by[sp.name] = conc_uv_by.get(sp.name, 0.0) + signals[uv_i]
+        conc_cond_by[sp.name] = conc_cond_by.get(sp.name, 0.0) + signals[cond_i]
+
     flow_trace = np.atleast_1d(as_flow_fn(flow_profile)(t)) * np.ones_like(t)
+    total_uv = sum(conc_uv_by.values())
+    total_cond = sum(conc_cond_by.values())
     return dict(
         t=t,
-        uv_mAU=beer_uv(signals[uv_i]),
-        cond_mScm=kohlrausch_cond(signals[cond_i], baseline=COND_BASELINE),
+        uv_mAU=uv_from_species(conc_uv_by),
+        cond_mScm=cond_from_species(conc_cond_by, baseline=COND_BASELINE),
         flow_mLmin=flow_trace,
-        conc_uv=signals[uv_i],
-        conc_cond=signals[cond_i],
+        conc_uv=total_uv,
+        conc_cond=total_cond,
+        species=conc_uv_by,
         xmax=exp.xmax,
     )
 
@@ -146,7 +215,7 @@ DEFAULT_CONFIG = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiments.yaml")
 
 _ALLOWED = {"name", "kind", "connection", "flow", "figure", "surface",
-            "c_tracer", "loop_uL", "inject_at", "description", "xmax"}
+            "c_tracer", "loop_uL", "inject_at", "description", "xmax", "species"}
 
 
 def load_config(path: Optional[str] = None):

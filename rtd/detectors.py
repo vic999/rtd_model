@@ -41,6 +41,40 @@ import numpy as np
 COND_NANO3 = 121.5     # mS/cm per (mol/L)   -- from limiting molar conductivity
 UV_NANO3 = 430.0       # mAU  per (mol/L)    -- illustrative calibration (see above)
 
+# --- multi-species detector coefficients (improvement #2) -----------------
+# Per-species responses so a run with several chemicals (e.g. a tris-acetate
+# buffer displaced by NaNO3) produces UV and conductivity traces of DIFFERENT
+# shape.  Values other than NaNO3 are ILLUSTRATIVE (chosen to reproduce the
+# magnitudes/signs seen in the real transition data); see docs/PARAMETERS.md
+# and docs/MULTICOMPONENT.md.
+UV_BUFFER = 0.0        # tris-acetate absorbs ~nothing at 280 nm
+COND_BUFFER = 11.9     # mS/cm per (unit buffer) -- gives the measured ~11.9 baseline
+UV_ANTIBODY = 90.0     # mAU per (g/L) IgG at 280 nm  (illustrative)
+COND_ANTIBODY = 0.5    # mS/cm per (g/L)              (illustrative, small)
+
+SPECIES_UV = {"NaNO3": UV_NANO3, "buffer": UV_BUFFER, "antibody": UV_ANTIBODY}
+SPECIES_COND = {"NaNO3": COND_NANO3, "buffer": COND_BUFFER, "antibody": COND_ANTIBODY}
+
+
+def _species_coeffs(names, table, kind):
+    missing = [n for n in names if n not in table]
+    if missing:
+        raise KeyError(f"no {kind} coefficient for species {missing}; "
+                       f"known: {sorted(table)}")
+    return {n: table[n] for n in names}
+
+
+def uv_from_species(conc_by_species, baseline=0.0):
+    """UV (mAU) from a {species: concentration} dict, per-species Beer's law."""
+    coeffs = _species_coeffs(conc_by_species.keys(), SPECIES_UV, "UV")
+    return beer_uv(conc_by_species, eps=coeffs, baseline=baseline)
+
+
+def cond_from_species(conc_by_species, baseline=0.0):
+    """Conductivity (mS/cm) from a {species: concentration} dict (Kohlrausch)."""
+    coeffs = _species_coeffs(conc_by_species.keys(), SPECIES_COND, "conductivity")
+    return kohlrausch_cond(conc_by_species, Lambda=coeffs, baseline=baseline)
+
 
 def _combine(concentrations, coeffs):
     """

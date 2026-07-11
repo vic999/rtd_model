@@ -45,3 +45,45 @@ experiments:
   - {name: V4-1, figure: 4, kind: step, connection: filter, flow: 0.35, surface: 3,    c_tracer: 0.1,  description: "3 cm2, 0.1 M, 0.35 mL/min"}
   - {name: V4-2, figure: 4, kind: step, connection: filter, flow: 1.0,  surface: 10,   c_tracer: 0.1,  description: "10 cm2, 0.1 M, 1 mL/min"}
   - {name: V4-3, figure: 4, kind: step, connection: filter, flow: 10.0, surface: 100,  c_tracer: 0.1,  description: "100 cm2, 0.1 M, 10 mL/min"}
+
+  # -------- Combined step + pulse (multi-input; same species, #2) ------------
+  # A 0.05 M NaNO3 step with a 0.5 M NaNO3 pulse superimposed during steady
+  # state.  Single species -> UV and conductivity share the same shape.
+  - name: V5
+    figure: null
+    connection: bypass
+    flow: 10.0
+    description: "combined: 0.05 M step + 0.5 M pulse, bypass, 10 mL/min"
+    species:
+      - {name: NaNO3, step: 0.05, pulse: 0.5}
+  - name: V6-2
+    figure: null
+    connection: filter
+    flow: 1.0
+    surface: 10
+    description: "combined: 0.05 M step + 0.5 M pulse, 10 cm2, 1 mL/min"
+    species:
+      - {name: NaNO3, step: 0.05, pulse: 0.5}
+  - name: V7
+    figure: null
+    connection: filter
+    flow: 0.35
+    surface: 3
+    description: "antibody: 0.5 g/L step + 2 g/L pulse, 3 cm2, 0.35 mL/min"
+    species:
+      - {name: antibody, step: 0.5, pulse: 2.0}
+
+  # -------- True multi-component transition demo (two species, #2) -----------
+  # A tris-acetate buffer (high conductivity, ~no UV) is displaced by NaNO3
+  # (UV-absorbing), with a 0.5 M NaNO3 pulse during the plateau.  Because the
+  # two species hit the detectors differently, conductivity DROPS while UV
+  # RISES across the transition -- the opposite-sign behaviour seen in real
+  # transition data.  Not a paper panel (figure: null); a demonstration.
+  - name: TR1
+    figure: null
+    connection: connector
+    flow: 1.0
+    description: "transition demo: tris-acetate buffer -> 0.05 M NaNO3 + 0.5 M pulse"
+    species:
+      - {name: buffer, baseline: 1.0}
+      - {name: NaNO3, step: 0.05, pulse: 0.5}

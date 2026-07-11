@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtd-virus-filtration"
+version = "0.1.0"
+description = "Residence-time-distribution model for continuous virus filtration (Chen et al., 2024)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "RTD model reconstruction" }]
+keywords = ["residence time distribution", "virus filtration", "downstream processing", "chromatography"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research",
+]
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "matplotlib>=3.6",
+  "pandas>=1.5",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+speed = ["numba>=0.58"]     # optional JIT of the DPF stencil
+dev = ["pytest>=7"]
+
+[project.scripts]
+rtd = "rtd_cli:main"        # installs a `rtd` command -> rtd_cli.main()
+
+[tool.setuptools]
+packages = ["rtd"]
+py-modules = ["rtd_cli"]    # top-level module backing the `rtd` entry point
+
+[tool.setuptools.package-data]
+rtd = ["py.typed"]          # ship inline type information (PEP 561)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true    # numba/yaml/etc. may lack stubs
+warn_unused_ignores = true

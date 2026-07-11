@@ -14,9 +14,12 @@ import numpy as np
 from .units import compute_max_step
 
 
-def run_train(seq, t_grid, c_in, flow_mL_min, read_indices=None):
+def run_train(seq, t_grid, c_in, flow_mL_min, read_indices=None, c0=0.0):
     """
     Propagate ``c_in`` through the ordered list ``seq`` of units.
+
+    ``c0`` initialises every unit to a uniform concentration -- use it to start
+    the system pre-equilibrated with a background species (multi-component runs).
 
     Returns
     -------
@@ -33,7 +36,7 @@ def run_train(seq, t_grid, c_in, flow_mL_min, read_indices=None):
     signals = {}
     c = c_in
     for i, unit in enumerate(seq):
-        c = unit.propagate(t_grid, c, flow_mL_min, max_step=max_step)
+        c = unit.propagate(t_grid, c, flow_mL_min, max_step=max_step, c0=c0)
         if i in read_indices:
             signals[i] = c.copy()
     return signals, c

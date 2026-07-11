@@ -66,15 +66,15 @@ class Unit:
     diameter_mm: Optional[float] = None
     length_mm: Optional[float] = None
 
-    def propagate(self, t_grid, c_in, flow_mL_min, max_step=None):
+    def propagate(self, t_grid, c_in, flow_mL_min, max_step=None, c0=0.0):
         if self.model == "CST":
             return cst_outlet(t_grid, c_in, self.volume_uL, flow_mL_min,
-                              max_step=max_step)
+                              max_step=max_step, c0=c0)
         elif self.model == "DPF":
             return dpf_outlet(
                 t_grid, c_in, volume_uL=self.volume_uL,
                 length_mm=self.length_mm, diameter_mm=self.diameter_mm,
-                flow_mL_min=flow_mL_min, max_step=max_step,
+                flow_mL_min=flow_mL_min, max_step=max_step, c0=c0,
             )
         raise ValueError(f"Unknown model {self.model!r}")
 
@@ -98,7 +98,7 @@ class Filter:
     film_resistance: bool = False
     eps_const: float = 0.85
 
-    def propagate(self, t_grid, c_in, flow_mL_min, max_step=None):
+    def propagate(self, t_grid, c_in, flow_mL_min, max_step=None, c0=0.0):
         f = FILTERS[self.surface_cm2]
         dia_I = _equiv_diameter_mm(f["V_I"], f["len_I"])
         return filter_outlet(
@@ -107,7 +107,7 @@ class Filter:
             V_wall_uL=f["V_wall"], V_O_uL=f["V_O"],
             l=self.l, eta=self.eta, alpha=self.alpha, dcmax=self.dcmax,
             film_resistance=self.film_resistance, eps_const=self.eps_const,
-            max_step=max_step,
+            max_step=max_step, c0=c0,
         )
 
 

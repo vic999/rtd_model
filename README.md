@@ -58,20 +58,25 @@ rtd_model/
 │   ├── flow.py          # FlowProfile: Constant/Ramp/DelayedStep/Sawtooth/FromData
 │   ├── detectors.py     # Beer's-law UV (mAU) + Kohlrausch conductivity (mS/cm)
 │   ├── data.py          # ÄKTA UNICORN CSV loader + event detection
-│   ├── experiments.py   # Experiment model + YAML loader + simulate()
+│   ├── experiments.py   # Experiment model + species + YAML loader + simulate()
 │   ├── plots.py         # panel/grid/single-plot + CSV export
+│   ├── py.typed         # PEP 561 marker (ships inline types)
 │   └── simulate.py      # run_train() + r2_score()
-├── experiments.yaml     # experiment definitions (C*/V*); add your own here
+├── experiments.yaml     # experiment definitions (C*/V*/multi-species); add your own
 ├── rtd_cli.py           # command-line entry point (list/figure/plot/csv)
 ├── run_figures.py       # thin wrapper: reproduces Figure 3 and Figure 4
 ├── compare_data.py      # compare model vs a real ÄKTA run; infer configuration
 ├── demo_flow_profiles.py# shows variable flow reshaping the RTD response
 ├── convergence_study.py # DPF grid-convergence: van Leer vs upwind
 ├── verify.py            # physics checks (mass balance, MRT, gain, flow, ordering)
+├── tests/               # pytest suite (physics, convergence, multi-species, CLI)
+├── pyproject.toml       # packaging (pip install -e .) + `rtd` console script
+├── .github/workflows/   # CI: pytest + verify.py on 3.10/3.11/3.12
 ├── docs/
 │   ├── NUMERICS.md      # how every equation is discretized and solved
 │   ├── DISCRETIZATION.md# van Leer flux-limited DPF scheme + numerical diffusion
 │   ├── FLOW_PROFILES.md # variable flow: how it works and how to configure it
+│   ├── MULTICOMPONENT.md# multi-species tracers (buffer + NaNO3) + detectors
 │   ├── PARAMETERS.md    # every constant: value, units, provenance
 │   └── PLANS.md         # design plans + improvement backlog
 ├── requirements.txt
@@ -81,11 +86,17 @@ rtd_model/
 ## How to run
 
 ```bash
-pip install -r requirements.txt
-python3 rtd_cli.py --help  # command-line interface (recommended)
+pip install -r requirements.txt      # or:  pip install -e .   (adds an `rtd` command)
+python3 rtd_cli.py --help  # command-line interface (recommended); or `rtd --help`
 python3 run_figures.py     # -> figure3.png calibration, figure4.png validation
 python3 verify.py          # -> prints PASS/FAIL on the conservation checks
+pytest -q                  # -> runs the test suite
 ```
+
+Multi-component (two-species) runs — a tris-acetate buffer displaced by NaNO₃,
+where UV rises while conductivity drops — are supported; see
+[`docs/MULTICOMPONENT.md`](docs/MULTICOMPONENT.md) and the `TR1` experiment
+(`python3 rtd_cli.py plot --experiment TR1`).
 
 ## Command-line interface
 
