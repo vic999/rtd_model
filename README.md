@@ -53,12 +53,46 @@ rtd_model/
 │   ├── filter_model.py  # three-compartment virus filter (Eqs. 3–9)
 │   ├── equipment.py     # Table 1 geometry + train assembly (Fig. 1 connections)
 │   ├── injection.py     # pulse / stepwise / combined inlet signals
+│   ├── flow.py          # FlowProfile: Constant/Ramp/DelayedStep/Sawtooth/FromData
+│   ├── detectors.py     # Beer's-law UV (mAU) + Kohlrausch conductivity (mS/cm)
+│   ├── data.py          # ÄKTA UNICORN CSV loader + event detection
 │   └── simulate.py      # run_train() + r2_score()
 ├── run_figures.py       # reproduces Figure 3 (pulse) and Figure 4 (stepwise)
-├── verify.py            # physics checks (mass balance, MRT, gain, ordering)
+├── compare_data.py      # compare model vs a real ÄKTA run; infer configuration
+├── demo_flow_profiles.py# shows variable flow reshaping the RTD response
+├── verify.py            # physics checks (mass balance, MRT, gain, flow, ordering)
+├── docs/
+│   ├── NUMERICS.md      # how every equation is discretized and solved
+│   ├── FLOW_PROFILES.md # variable flow: how it works and how to configure it
+│   └── PLANS.md         # design plans + improvement backlog
 ├── requirements.txt
 └── README.md
 ```
+
+## Detector signals (UV and conductivity)
+
+The RTD solvers produce a tracer **concentration** `c(t)`. `rtd/detectors.py`
+converts that to the two instrument signals the paper actually plots:
+
+- `beer_uv(c)` → UV₂₈₀ absorbance in **mAU** (Beer's law, Eq. 11)
+- `kohlrausch_cond(c)` → conductivity in **mS/cm** (Kohlrausch's law, Eq. 12)
+
+For a single tracer both share the same *shape* but sit on different-magnitude
+axes; for multiple species they also differ in shape. The molar constants
+(`UV_NANO3`, `COND_NANO3`) are documented in `detectors.py`; the conductivity one
+comes from NaNO₃'s molar conductivity, the UV one is an illustrative calibration
+(magnitude only) pending a fit. `run_figures.py` plots UV, conductivity and flow
+on three separate axes.
+
+## Variable flow rate
+
+Flow may be a constant number **or** a `FlowProfile` (`Constant`, `Ramp`,
+`DelayedStep`, `Sawtooth`, `FromData`, `Piecewise`). The solvers evaluate
+`V̇(t)` inside the equations, so ramps and saw-tooth flows are handled correctly,
+and a loop pulse is delivered by **volume** (not fixed duration) under varying
+flow. Passing a number reproduces the old results exactly. See
+[`docs/FLOW_PROFILES.md`](docs/FLOW_PROFILES.md) for the full configuration guide
+and `demo_flow_profiles.py` for a worked example.
 
 ## How to run
 
@@ -136,10 +170,11 @@ The `r2_score` function is already provided and matches
 
 These are documented so the reconstruction is auditable:
 
-- **Constant flow rate.** The paper adds a pump ramp/sawtooth to capture the
-  6-second delay of the flow controller (visible as the peculiar shapes at
-  10 mL/min). Here flow is held at the setpoint; this affects only fine detail
-  of the start-up/flow-change transients, not the RTD structure.
+- **Flow rate.** Time-varying flow is now supported (`rtd/flow.py`): the solvers
+  evaluate `V̇(t)` inside the equations, so the paper's delayed pump ramp and
+  high-flow saw-tooth can be modelled, and a measured flow trace can be replayed
+  (`FromData`). The reproduced Figures 3/4 still use a constant set-point flow
+  for clarity; see `docs/FLOW_PROFILES.md` and `demo_flow_profiles.py`.
 - **Film-resistance ε(t) (Eqs. 5–9).** This is the most under-specified part of
   the paper: Eq. 8 needs the equilibration-buffer driving force `Δc_eq` and the
   mass-transfer scale `k_m,eq`, neither of which is tabulated, and with the

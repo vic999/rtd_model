@@ -18,16 +18,34 @@ from __future__ import annotations
 
 import numpy as np
 
+from .flow import as_flow_fn
+
 
 def pulse_inlet(t_grid, loop_volume_uL, flow_mL_min, c_tracer,
                 c_base=0.0, t_start=5.0):
     """
-    Rectangular pulse of duration = loop_volume / flow, starting at t_start.
+    Rectangular pulse delivering a fixed loop VOLUME starting at t_start.
+
+    A sample loop pushes out a fixed volume, not a fixed duration.  The pulse
+    therefore ends when the cumulative delivered volume reaches
+    ``loop_volume_uL``:
+
+        int_{t_start}^{t_end} Vdot(t) dt = loop_volume_uL
+
+    For a constant flow this reduces to the usual  width = loop_volume / Vdot.
+    ``flow_mL_min`` may be a scalar or a FlowProfile.
     """
-    Vdot = flow_mL_min * 1000.0 / 60.0          # uL/s
-    width = loop_volume_uL / Vdot               # s
+    t_grid = np.asarray(t_grid, float)
+    fn = as_flow_fn(flow_mL_min)
+    vdot = np.asarray(fn(t_grid), float) * 1000.0 / 60.0   # uL/s on the grid
+    # cumulative volume delivered from t_start
+    delivered = np.zeros_like(t_grid)
+    dt = np.diff(t_grid)
+    inc = 0.5 * (vdot[1:] + vdot[:-1]) * dt                # trapezoid
+    started = t_grid[1:] > t_start
+    delivered[1:] = np.cumsum(np.where(started, inc, 0.0))
     c = np.full_like(t_grid, c_base, dtype=float)
-    mask = (t_grid >= t_start) & (t_grid < t_start + width)
+    mask = (t_grid >= t_start) & (delivered < loop_volume_uL)
     c[mask] = c_tracer
     return c
 

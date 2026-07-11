@@ -35,13 +35,21 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
+from .flow import as_flow_fn, flow_feature_scale
+
 
 # --------------------------------------------------------------------------
 # Unit helpers
 # --------------------------------------------------------------------------
 def _flow_uL_per_s(flow_mL_min: float) -> float:
-    """Convert a volumetric flow rate mL/min -> uL/s."""
+    """Convert a volumetric flow rate mL/min -> uL/s (accepts scalar only)."""
     return flow_mL_min * 1000.0 / 60.0
+
+
+def _vdot_fn(flow):
+    """Return a callable t[s] -> Vdot[uL/s] from a scalar or FlowProfile."""
+    fn = as_flow_fn(flow)
+    return lambda t: fn(t) * 1000.0 / 60.0
 
 
 def _make_inlet(t_grid: np.ndarray, c_in: np.ndarray):
@@ -52,25 +60,27 @@ def _make_inlet(t_grid: np.ndarray, c_in: np.ndarray):
     )
 
 
-def compute_max_step(t_grid, c_in):
+def compute_max_step(t_grid, c_in, flow=None):
     """
     Choose a solver ``max_step`` that (a) resolves the narrowest forcing feature
     (e.g. an injection pulse) so the adaptive integrator cannot step over it,
-    and (b) stays coarse enough elsewhere for speed.
+    (b) resolves any flow-rate change (ramp / saw-tooth), and (c) stays coarse
+    enough elsewhere for speed.
     """
     t_grid = np.asarray(t_grid, float)
     c_in = np.asarray(c_in, float)
     span = t_grid[-1] - t_grid[0]
-    coarse = span / 500.0                      # >= ~500 steps across the run
+    cap = span / 500.0                         # >= ~500 steps across the run
     active = np.abs(c_in) > 1e-12              # "active" (nonzero) input samples
     if active.any():
         idx = np.flatnonzero(active)
         splits = np.split(idx, np.flatnonzero(np.diff(idx) > 1) + 1)
         widths = [t_grid[r[-1]] - t_grid[r[0]] for r in splits if len(r) > 1]
         if widths:
-            feature = min(widths) / 4.0
-            return max(min(coarse, feature), span / 20000.0)
-    return coarse
+            cap = min(cap, min(widths) / 4.0)
+    if flow is not None:
+        cap = min(cap, flow_feature_scale(flow, t_grid))
+    return max(cap, span / 20000.0)
 
 
 # --------------------------------------------------------------------------
@@ -92,17 +102,16 @@ def cst_outlet(t_grid, c_in, volume_uL, flow_mL_min, c0=0.0, max_step=None):
     -------
     (N,) outlet concentration = tank concentration.
     """
-    Vdot = _flow_uL_per_s(flow_mL_min)          # uL/s
-    tau_inv = Vdot / volume_uL                  # 1/s   (= Vdot/V)
+    vdot = _vdot_fn(flow_mL_min)                # callable t -> uL/s
     cin = _make_inlet(t_grid, c_in)
 
     def rhs(t, y):
-        return np.array([tau_inv * (cin(t) - y[0])])
+        return np.array([vdot(t) / volume_uL * (cin(t) - y[0])])
 
     # Cap the step so the adaptive solver cannot step over narrow forcing
     # features (e.g. a short injection pulse) while staying fast elsewhere.
     if max_step is None:
-        max_step = compute_max_step(t_grid, c_in)
+        max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     sol = solve_ivp(
         rhs, (t_grid[0], t_grid[-1]), [c0],
         t_eval=t_grid, method="BDF", rtol=1e-6, atol=1e-9, max_step=max_step,
@@ -130,15 +139,12 @@ def dpf_outlet(t_grid, c_in, volume_uL, length_mm, diameter_mm, flow_mL_min,
     cross-section A is then taken as volume/length so that residence time is
     exactly V/Vdot while the diameter still sets the dispersion length scale.
     """
-    Vdot = _flow_uL_per_s(flow_mL_min)                     # uL/s
+    vdot = _vdot_fn(flow_mL_min)                           # callable t -> uL/s
     L = length_mm                                          # mm
 
     # Cross-sectional area consistent with the tabulated hold-up volume:
     #   A = V / L   (uL/mm = mm^2)     -> preserves mean residence time V/Vdot
     A = volume_uL / L                                      # mm^2
-    u = Vdot / A                                           # mm/s (superficial)
-    # Dispersion coefficient, Peclet based on the physical diameter.
-    Dax = u * diameter_mm / Pe                             # mm^2/s
 
     dz = L / n_cells
     zc = (np.arange(n_cells) + 0.5) * dz                   # cell centres
@@ -149,6 +155,8 @@ def dpf_outlet(t_grid, c_in, volume_uL, length_mm, diameter_mm, flow_mL_min,
 
     def rhs(t, c):
         cf = cin(t)
+        u = vdot(t) / A                                    # mm/s (time-dependent)
+        Dax = u * diameter_mm / Pe                         # mm^2/s
         dcdt = np.empty_like(c)
 
         # --- advection (first-order upwind, u > 0) -----------------------
@@ -172,7 +180,7 @@ def dpf_outlet(t_grid, c_in, volume_uL, length_mm, diameter_mm, flow_mL_min,
 
     c_init = np.full(n_cells, c0, dtype=float)
     if max_step is None:
-        max_step = compute_max_step(t_grid, c_in)
+        max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     sol = solve_ivp(
         rhs, (t_grid[0], t_grid[-1]), c_init,
         t_eval=t_grid, method="BDF", rtol=1e-6, atol=1e-9, max_step=max_step,

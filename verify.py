@@ -58,19 +58,40 @@ def main():
                     f"MRT = {mrt:.1f} s (expected ~61.5)")
 
     # --- 3: step response reaches unit gain (filter train) -----------------
-    t, uv, cond = simulate_step(connection="filter", flow=1.0, surface=10,
-                                c_tracer=0.05)
+    # simulate_step now returns UV in mAU via Beer's law; plateau = c*UV_NANO3.
+    from rtd import UV_NANO3
+    t, uv, cond, flow_tr = simulate_step(connection="filter", flow=1.0,
+                                         surface=10, c_tracer=0.05)
+    plateau_conc = uv.max() / UV_NANO3
     all_ok &= check("Filter step plateau = feed conc.",
-                    abs(uv.max() - 0.05) < 2e-3,
-                    f"plateau = {uv.max():.4f} (feed 0.05)")
+                    abs(plateau_conc - 0.05) < 2e-3,
+                    f"plateau = {plateau_conc:.4f} M (feed 0.05)")
 
     # --- 4: larger filter -> later pulse peak at same flow -----------------
-    _, uv3, _ = simulate_pulse(connection="filter", flow=1.0, surface=3)
-    t10, uv10, _ = simulate_pulse(connection="filter", flow=1.0, surface=10)
-    tpk3 = simulate_pulse(connection="filter", flow=1.0, surface=3)[0][uv3.argmax()]
-    tpk10 = t10[uv10.argmax()]
+    t3, uv3, _, _ = simulate_pulse(connection="filter", flow=1.0, surface=3)
+    t10, uv10, _, _ = simulate_pulse(connection="filter", flow=1.0, surface=10)
+    tpk3, tpk10 = t3[uv3.argmax()], t10[uv10.argmax()]
     all_ok &= check("Peak time increases with filter size",
                     tpk10 > tpk3, f"3cm2 peak {tpk3:.0f}s < 10cm2 peak {tpk10:.0f}s")
+
+    # --- 5: constant-flow regression (scalar == Constant profile) ----------
+    from rtd import Constant
+    tt = np.linspace(0, 600, 4000)
+    cin = np.zeros_like(tt); cin[(tt >= 1) & (tt < 2)] = 1.0
+    a = cst_outlet(tt, cin, 1000.0, 1.0)
+    b = cst_outlet(tt, cin, 1000.0, Constant(1.0))
+    all_ok &= check("Scalar flow == Constant() profile",
+                    np.max(np.abs(a - b)) < 1e-12,
+                    f"max diff = {np.max(np.abs(a - b)):.2e}")
+
+    # --- 6: MASS conservation under a varying (ramp) flow ------------------
+    from rtd import Ramp
+    prof = Ramp(2.0, t_start=0, t_ramp=60, v_start=0.2)
+    out = cst_outlet(tt, cin, 1000.0, prof)
+    vdot = prof(tt) * 1000.0 / 60.0
+    mass_ratio = trapezoid(out * vdot, tt) / trapezoid(cin * vdot, tt)
+    all_ok &= check("Mass conserved under varying flow (int c*Vdot dt)",
+                    abs(mass_ratio - 1) < 0.02, f"mass_out/mass_in = {mass_ratio:.3f}")
 
     print()
     print("ALL CHECKS PASSED" if all_ok else "SOME CHECKS FAILED")

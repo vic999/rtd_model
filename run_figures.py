@@ -25,8 +25,14 @@ import matplotlib.pyplot as plt
 
 from rtd import build_train, run_train
 from rtd.injection import pulse_inlet, step_inlet
+from rtd.detectors import beer_uv, kohlrausch_cond
+from rtd.flow import as_flow_fn
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Conductivity buffer baseline (mS/cm) so the tracer signal sits on a
+# background, as in the instrument.  Illustrative; see rtd/detectors.py.
+COND_BASELINE = 0.0
 
 
 def _train_holdup_uL(seq):
@@ -41,25 +47,43 @@ def _train_holdup_uL(seq):
     return total
 
 
+def _rep_flow(flow, t):
+    """Representative (set-point) flow in mL/min for sizing time windows."""
+    fn = as_flow_fn(flow)
+    v = np.atleast_1d(fn(t))
+    pos = v[v > 1e-9]
+    return float(pos.max()) if pos.size else float(np.max(v))
+
+
 def simulate_pulse(connection, flow, surface=None, loop_uL=260.0,
-                   c_tracer=0.5, t_start=5.0, n_time=1200, t_span_factor=5.0):
+                   c_tracer=0.5, t_start=0.0, n_time=1200, t_span_factor=2.0):
+    """
+    Returns t, UV(mAU), Cond(mS/cm), flow(mL/min).  ``flow`` may be a scalar or
+    a FlowProfile.
+    """
     seq, names, uv_i, cond_i = build_train(connection, surface_cm2=surface)
     holdup = _train_holdup_uL(seq)
-    Vdot = flow * 1000.0 / 60.0
+    t_probe = np.linspace(0, 1, 50)             # for representative flow
+    Vdot = _rep_flow(flow, t_probe) * 1000.0 / 60.0
     mean_res = holdup / Vdot
     pulse_w = loop_uL / Vdot
     t_end = t_start + pulse_w + t_span_factor * mean_res
     t = np.linspace(0, t_end, n_time)
     c_in = pulse_inlet(t, loop_uL, flow, c_tracer, t_start=t_start)
     signals, _ = run_train(seq, t, c_in, flow, read_indices=[uv_i, cond_i])
-    return t, signals[uv_i], signals[cond_i]
+    uv = beer_uv(signals[uv_i])
+    cond = kohlrausch_cond(signals[cond_i], baseline=COND_BASELINE)
+    flow_trace = np.atleast_1d(as_flow_fn(flow)(t)) * np.ones_like(t)
+    return t, uv, cond, flow_trace
 
 
 def simulate_step(connection, flow, surface=None, c_tracer=0.05,
                   n_time=1400, t_span_factor=4.0):
+    """Returns t, UV(mAU), Cond(mS/cm), flow(mL/min)."""
     seq, names, uv_i, cond_i = build_train(connection, surface_cm2=surface)
     holdup = _train_holdup_uL(seq)
-    Vdot = flow * 1000.0 / 60.0
+    t_probe = np.linspace(0, 1, 50)
+    Vdot = _rep_flow(flow, t_probe) * 1000.0 / 60.0
     mean_res = holdup / Vdot
     t_on = 0.5 * mean_res
     t_off = t_on + t_span_factor * mean_res      # plateau then wash-out
@@ -67,7 +91,10 @@ def simulate_step(connection, flow, surface=None, c_tracer=0.05,
     t = np.linspace(0, t_end, n_time)
     c_in = step_inlet(t, c_tracer, t_on=t_on, t_off=t_off)
     signals, _ = run_train(seq, t, c_in, flow, read_indices=[uv_i, cond_i])
-    return t, signals[uv_i], signals[cond_i]
+    uv = beer_uv(signals[uv_i])
+    cond = kohlrausch_cond(signals[cond_i], baseline=COND_BASELINE)
+    flow_trace = np.atleast_1d(as_flow_fn(flow)(t)) * np.ones_like(t)
+    return t, uv, cond, flow_trace
 
 
 # --------------------------------------------------------------------------
@@ -98,70 +125,63 @@ FIG4 = [
 ]
 
 
+def _plot_panel(ax, t, uv, cond, flow, title):
+    """Draw one experiment panel: UV (mAU), conductivity (mS/cm), flow (mL/min)
+    on three separate y-axes, with a combined legend."""
+    # UV on the primary axis (mAU)
+    ln1, = ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (mAU)")
+    ax.set_ylabel("UV 280 (mAU)", fontsize=8, color="#1f6fb2")
+
+    # Conductivity on a second axis (mS/cm)
+    ax2 = ax.twinx()
+    ln2, = ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond (mS/cm)")
+    ax2.set_ylabel("Cond (mS/cm)", fontsize=8, color="#2ca02c")
+
+    # Flow on a third axis (mL/min), spine offset to the right
+    ax3 = ax.twinx()
+    ax3.spines["right"].set_position(("outward", 34))
+    ln3, = ax3.plot(t, flow, color="#e69500", lw=1.2, ls=":", label="Flow (mL/min)")
+    ax3.set_ylabel("Flow (mL/min)", fontsize=8, color="#e69500")
+    ax3.set_ylim(0, max(1e-6, np.max(flow) * 1.6))
+
+    lns = [ln1, ln2, ln3]
+    ax.legend(lns, [l.get_label() for l in lns], loc="upper right", fontsize=7)
+    ax.set_title(title, fontsize=9)
+    ax.set_xlabel("Time / s", fontsize=8)
+    ax.tick_params(labelsize=7); ax2.tick_params(labelsize=7); ax3.tick_params(labelsize=7)
+
+
 def make_figure3():
-    fig, axes = plt.subplots(3, 3, figsize=(13, 9))
+    fig, axes = plt.subplots(3, 3, figsize=(14, 9))
     axes = axes.ravel()
     for ax, (title, kw) in zip(axes, FIG3):
-        t, uv, cond = simulate_pulse(**kw)
-
-        # Save the line objects returned by plot (note the commas)
-        ln1, = ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (V_I..)")
-
-        ax2 = ax.twinx()
-        ln2, = ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond.")
-
-        # Combine the lines and labels from both axes
-        lns = [ln1, ln2]
-        labs = [l.get_label() for l in lns]
-
-        # Draw a single, combined legend on the main axis
-        ax.legend(lns, labs, loc="upper right", fontsize=8)
-
-        ax.set_title(title, fontsize=9)
-        ax.set_xlabel("Time / s", fontsize=8)
-        ax.set_ylabel("norm. tracer", fontsize=8, color="#1f6fb2")
-        ax.tick_params(labelsize=7); ax2.tick_params(labelsize=7)
+        t, uv, cond, flow = simulate_pulse(**kw)
+        _plot_panel(ax, t, uv, cond, flow, title)
     for ax in axes[len(FIG3):]:
         ax.axis("off")
     fig.suptitle("Figure 3 (reproduced): pulse-injection calibration curves\n"
-                 "forward simulation with l=3, eta=0.13, alpha=1.14, dcmax=2.17e-7",
+                 "UV via Beer's law, conductivity via Kohlrausch's law; "
+                 "l=3, eta=0.13, alpha=1.14, dcmax=2.17e-7",
                  fontsize=11)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     out = os.path.join(HERE, "figure3.png")
     fig.savefig(out, dpi=130)
     print("wrote", out)
 
 
 def make_figure4():
-    fig, axes = plt.subplots(3, 3, figsize=(13, 9))
+    fig, axes = plt.subplots(3, 3, figsize=(14, 9))
     axes = axes.ravel()
     for ax, (title, kw) in zip(axes, FIG4):
-        t, uv, cond = simulate_step(**kw)
-
-        # Save the line objects returned by plot (note the commas)
-        ln1, = ax.plot(t, uv, color="#1f6fb2", lw=2, label="UV (V_I..)")
-
-        ax2 = ax.twinx()
-        ln2, = ax2.plot(t, cond, color="#2ca02c", lw=1.5, ls="--", label="Cond.")
-
-        # Combine the lines and labels from both axes
-        lns = [ln1, ln2]
-        labs = [l.get_label() for l in lns]
-
-        # Draw a single, combined legend on the main axis
-        ax.legend(lns, labs, loc="upper right", fontsize=8)
-
-
-        ax.set_title(title, fontsize=9)
-        ax.set_xlabel("Time / s", fontsize=8)
-        ax.set_ylabel("norm. tracer", fontsize=8, color="#1f6fb2")
-        ax.tick_params(labelsize=7); ax2.tick_params(labelsize=7)
+        t, uv, cond, flow = simulate_step(**kw)
+        _plot_panel(ax, t, uv, cond, flow, title)
     for ax in axes[len(FIG4):]:
         ax.axis("off")
     fig.suptitle("Figure 4 (reproduced): stepwise validation curves\n"
-                 "start-up plateau + wash-out, forward simulation",
+                 "UV via Beer's law, conductivity via Kohlrausch's law; "
+                 "start-up plateau + wash-out",
                  fontsize=11)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     out = os.path.join(HERE, "figure4.png")
     fig.savefig(out, dpi=130)
     print("wrote", out)

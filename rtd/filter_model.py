@@ -51,8 +51,8 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
-from .units import (dpf_outlet, cst_outlet, _flow_uL_per_s, _make_inlet,
-                    compute_max_step)
+from .units import (dpf_outlet, cst_outlet, _flow_uL_per_s, _vdot_fn,
+                    _make_inlet, compute_max_step)
 
 
 # Reference smallest surface area (3 cm^2) used in the A3/Aj ratio (Eq. 7-8).
@@ -81,19 +81,14 @@ def permeate_space_outlet(
 
     Returns the outlet (last through-flow tank, k1 of stage l).
     """
-    Vdot = _flow_uL_per_s(flow_mL_min)                    # uL/s
+    vdot = _vdot_fn(flow_mL_min)                          # callable t -> uL/s
     Vstage = V_O_uL / l                                   # uL per radial stage
     cin = _make_inlet(t_grid, c_in)
 
     d_bar = _permeate_diameter_mm(V_O_uL)                 # mm
-    # side-area velocity u = Vdot / (pi d_bar L)   [mm/s]
-    u_side = Vdot / (np.pi * d_bar * L_EQUIV_MM)
     area_ratio = A3_REF_CM2 / surface_cm2                 # A3 / Aj
 
-    # unknown-scale guard so the argument of Eq.8 is dimensionless & O(1)
-    u13 = u_side ** (1.0 / 3.0)
-
-    def eps_of(dc_k1):
+    def eps_of(dc_k1, u13):
         if not film_resistance:
             return eps_const
         # Eq. 8 with the binary-buffer term.  In a binary tracer/buffer system
@@ -113,13 +108,17 @@ def permeate_space_outlet(
     # State vector: [c_k1_1, c_k2_1, c_k1_2, c_k2_2, ..., c_k1_l, c_k2_l]
     def rhs(t, y):
         cf = cin(t)
+        Vdot = vdot(t)                                    # uL/s (time-dependent)
+        # side-area velocity u = Vdot / (pi d_bar L) [mm/s] -> film-resistance
+        u_side = Vdot / (np.pi * d_bar * L_EQUIV_MM)
+        u13 = abs(u_side) ** (1.0 / 3.0)
         dydt = np.empty_like(y)
         prev_k1 = cf
         for j in range(l):
             ck1 = y[2 * j]
             ck2 = y[2 * j + 1]
             dc_k1 = prev_k1 - ck1
-            eps = eps_of(dc_k1)
+            eps = eps_of(dc_k1, u13)
             eps = min(max(eps, 0.05), 0.999)              # keep tanks non-degenerate
             Vk1 = eps * Vstage
             Vk2 = (1.0 - eps) * Vstage
@@ -132,7 +131,7 @@ def permeate_space_outlet(
 
     y0 = np.full(2 * l, c0, dtype=float)
     if max_step is None:
-        max_step = compute_max_step(t_grid, c_in)
+        max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     sol = solve_ivp(
         rhs, (t_grid[0], t_grid[-1]), y0,
         t_eval=t_grid, method="BDF", rtol=1e-6, atol=1e-9, max_step=max_step,
@@ -150,7 +149,7 @@ def filter_outlet(
     Full three-compartment filter: V_I (DPF) -> V_wall (CST) -> V_O (permeate).
     """
     if max_step is None:
-        max_step = compute_max_step(t_grid, c_in)
+        max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     # V_I : hollow spaces & headers -> DPF
     c_I = dpf_outlet(
         t_grid, c_in, volume_uL=V_I_uL, length_mm=len_I_mm,

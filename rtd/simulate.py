@@ -26,9 +26,10 @@ def run_train(seq, t_grid, c_in, flow_mL_min, read_indices=None):
         Concentration at the very end of the train.
     """
     read_indices = set(read_indices or [])
-    # One max_step chosen from the (sharpest) original input; reused for every
-    # unit so narrow injection features are resolved throughout the train.
-    max_step = compute_max_step(t_grid, c_in)
+    # One max_step chosen from the (sharpest) original input and the flow
+    # profile; reused for every unit so narrow injection features and flow
+    # ramps are resolved throughout the train.
+    max_step = compute_max_step(t_grid, c_in, flow=flow_mL_min)
     signals = {}
     c = c_in
     for i, unit in enumerate(seq):
