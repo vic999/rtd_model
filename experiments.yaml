@@ -122,6 +122,8 @@ experiments:
   # ======================================================================
 
   # V1 -- 0.05 M NaNO3 step, AKTA bypass, 10 mL/min
+  #       protocol timing pins the paper's 0-300 s window (step held ~245 s);
+  #       flow ramps to a constant 10 with an interruption dip at t_off.
   - name: V1
     figure: 4
     kind: step
@@ -130,6 +132,10 @@ experiments:
     surface: null
     c_tracer: 0.05
     description: "bypass, 0.05 M, 10 mL/min"
+    timing:
+      t_on: 10
+      t_off: 255
+      t_end: 300
 
   # V3 -- 0.1 M NaNO3 step, AKTA bypass, 10 mL/min
   - name: V3
@@ -140,15 +146,25 @@ experiments:
     surface: null
     c_tracer: 0.1
     description: "bypass, 0.1 M, 10 mL/min"
+    timing:
+      t_on: 10
+      t_off: 255
+      t_end: 300
 
   # V5 -- combined 0.05 M step + 0.5 M pulse, bypass, 10 mL/min
-  #       (buffer explicit so conductivity dips into a "U" then the pulse spikes)
+  #       (buffer explicit so conductivity dips into a "U" then the pulse spikes;
+  #       pulse fires mid-plateau, with a flow dip there too)
   - name: V5
     figure: 4
     connection: bypass
     flow: 10.0
     surface: null
     description: "0.05 M step + 0.5 M pulse, bypass, 10 mL/min"
+    timing:
+      t_on: 10
+      t_off: 255
+      t_end: 300
+      t_pulse: 130
     species:
       - name: buffer
         baseline: 1.0

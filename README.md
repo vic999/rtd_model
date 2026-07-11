@@ -76,6 +76,7 @@ rtd_model/
 │   ├── NUMERICS.md      # how every equation is discretized and solved
 │   ├── DISCRETIZATION.md# van Leer flux-limited DPF scheme + numerical diffusion
 │   ├── FLOW_PROFILES.md # variable flow: how it works and how to configure it
+│   ├── TIMING_AND_FLOW.md# protocol timing + event-driven flow (paper alignment)
 │   ├── MULTICOMPONENT.md# multi-species tracers (buffer + NaNO3) + detectors
 │   ├── PARAMETERS.md    # every constant: value, units, provenance
 │   └── PLANS.md         # design plans + improvement backlog
@@ -135,6 +136,17 @@ paper|overlay`, `--focus/--no-focus`); sensible defaults come from the
 `defaults:` block of `experiments.yaml` (per-experiment plots default to 300
 DPI, 9×6 in). CSV output contains time, UV (mAU), conductivity (mS/cm), flow
 (mL/min) and the raw tracer concentrations.
+
+### Protocol timing & flow shape
+
+By default the time window is auto-sized to the RTD (a few residence times) and
+the flow ramps to a constant set-point with a brief **interruption dip** at each
+transition (the paper's localized high-flow behaviour — not a continuous
+saw-tooth). To match a paper panel's exact time axis, add a `timing` block to an
+experiment (`t_on`/`t_off`/`t_end`, plus `t_pulse` for combined runs) — e.g. V1
+uses `10 / 255 / 300 s`. Flow can also be a spec (`constant`, `ramp`,
+`sawtooth`, or `from_data` to replay a measured trace). See
+[`docs/TIMING_AND_FLOW.md`](docs/TIMING_AND_FLOW.md).
 ## Detector signals (UV and conductivity)
 
 The RTD solvers produce a tracer **concentration** `c(t)`. `rtd/detectors.py`

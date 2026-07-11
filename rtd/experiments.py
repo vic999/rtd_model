@@ -20,26 +20,81 @@ import numpy as np
 import yaml
 
 from .equipment import build_train, FILTERS
-from .flow import DelayedStep, Sawtooth, as_flow_fn
+from .flow import (Constant, DelayedStep, Sawtooth, RampWithDips, FromData,
+                   as_flow_fn)
 from .injection import pulse_inlet, step_inlet
 from .detectors import uv_from_species, cond_from_species
 from .simulate import run_train
 
 # --------------------------------------------------------------------------
-# Flow-pattern helper (the paper's two flow behaviours; see run_figures notes)
+# Flow model (see docs/TIMING_AND_FLOW.md)
 # --------------------------------------------------------------------------
 PUMP_LAG_S = 6.0            # pump reaches set-point with ~6 s delay (Fig 3a,b)
-HIGH_FLOW_ML_MIN = 10.0     # >= this shows the saw-tooth (Fig 3g, 4a-c,f,i,l)
-SAWTOOTH_PERIOD_S = 15.0    # illustrative
+HIGH_FLOW_ML_MIN = 10.0     # >= this shows flow interruptions at events
 COND_BASELINE = 0.0         # conductivity buffer baseline added in the figures
 
 
+def flow_setpoint(flow):
+    """Return the set-point flow (mL/min) from a scalar or a flow-spec dict."""
+    if isinstance(flow, dict):
+        if flow.get("type") == "from_data":
+            from .data import load_unicorn_csv
+            d = load_unicorn_csv(flow["csv"])
+            v = np.asarray(d["flow"], float)
+            v = v[v > 1e-6]
+            return float(v.max()) if v.size else 0.0
+        return float(flow.get("setpoint", flow.get("peak", HIGH_FLOW_ML_MIN)))
+    return float(flow)
+
+
+def build_flow(flow, setpoint, events=(), lag=PUMP_LAG_S):
+    """
+    Build a FlowProfile from an experiment's ``flow`` field.
+
+    ``flow`` may be a scalar (mL/min) or a spec dict with a ``type``:
+      * (scalar / omitted) -> default: ramp to ``setpoint`` then constant, with a
+        localized dip toward 0 at each event time (only applied at high flow);
+      * {type: constant, setpoint}
+      * {type: ramp, setpoint, lag}
+      * {type: sawtooth, base, peak, period}
+      * {type: from_data, csv}
+      * {type: ramp_dips, setpoint, lag, dip_to, dip_width}  (explicit form)
+    ``events`` are the flow-interruption times (transition / pulse), derived
+    from the timing so flow and signal stay in sync.
+    """
+    if not isinstance(flow, dict):
+        # default profile: ramp + event dips (dips only at high flow)
+        ev = events if setpoint >= HIGH_FLOW_ML_MIN else ()
+        return RampWithDips(setpoint, lag=lag, events=ev)
+
+    t = flow.get("type")
+    if t == "constant":
+        return Constant(flow.get("setpoint", setpoint))
+    if t == "ramp":
+        return DelayedStep(flow.get("setpoint", setpoint),
+                           lag=flow.get("lag", lag))
+    if t == "sawtooth":
+        return Sawtooth(flow.get("base", 0.0), flow.get("peak", setpoint),
+                        period=flow.get("period", 15.0))
+    if t == "from_data":
+        from .data import load_unicorn_csv
+        d = load_unicorn_csv(flow["csv"])
+        return FromData(d["flow_t"], d["flow"])
+    if t in ("ramp_dips", None):
+        ev = events if setpoint >= HIGH_FLOW_ML_MIN else ()
+        return RampWithDips(flow.get("setpoint", setpoint),
+                            lag=flow.get("lag", lag), events=ev,
+                            dip_to=flow.get("dip_to", 0.0),
+                            dip_width=flow.get("dip_width", 6.0))
+    raise ValueError(f"unknown flow type {t!r} "
+                     "(use constant/ramp/sawtooth/from_data/ramp_dips)")
+
+
 def experiment_flow(setpoint):
-    """Flow profile the paper describes for a given set-point (mL/min)."""
-    if setpoint >= HIGH_FLOW_ML_MIN:
-        return Sawtooth(v_base=0.5 * setpoint, v_peak=setpoint,
-                        period=SAWTOOTH_PERIOD_S, t_start=0.0)
-    return DelayedStep(setpoint, lag=PUMP_LAG_S, t_start=0.0)
+    """Default flow profile for a set-point (ramp to constant; no event dips).
+    Kept for backward compatibility; ``simulate`` uses ``build_flow`` with the
+    experiment's event times."""
+    return RampWithDips(float(setpoint), lag=PUMP_LAG_S, events=())
 
 
 # --------------------------------------------------------------------------
@@ -78,6 +133,7 @@ class Experiment:
     xmax: Optional[float] = None    # explicit x-limit (s)
     species: Optional[list] = None  # multi-species; None -> single NaNO3 tracer
     background: Optional[dict] = None  # equilibration buffer added to single-tracer runs
+    timing: Optional[dict] = None   # protocol times (t_on/t_off/t_end/t_pulse); None -> auto
 
     @property
     def title(self) -> str:
@@ -185,24 +241,36 @@ def simulate(exp: Experiment, n_time: int = 1400,
     """
     species = exp.species_list()
     has_step = exp.has_step
-    flow_profile = experiment_flow(exp.flow)
+    has_pulse = any(s.pulse for s in species)
     seq, names, uv_i, cond_i = build_train(
         exp.connection, surface_cm2=exp.surface, inject_at=exp.injection_node)
 
     holdup = _train_holdup_uL(seq)
-    Vdot = _rep_flow(flow_profile) * 1000.0 / 60.0        # uL/s
+    setpoint = flow_setpoint(exp.flow)                    # mL/min
+    Vdot = setpoint * 1000.0 / 60.0                       # uL/s
     mean_res = holdup / Vdot
     pulse_w = exp.loop_uL / Vdot
 
+    # --- timing: explicit protocol block, else residence-time auto-sizing ----
+    tm = exp.timing or {}
     if has_step:
-        t_on = 0.5 * mean_res
-        t_off = t_on + step_span * mean_res
-        t_end = t_off + step_span * mean_res
-        t_pulse = t_on + 0.5 * (t_off - t_on)             # pulse fires mid-plateau
+        t_on = tm.get("t_on", 0.5 * mean_res)
+        t_off = tm.get("t_off", t_on + step_span * mean_res)
+        t_end = tm.get("t_end", t_off + step_span * mean_res)
+        t_pulse = tm.get("t_pulse", t_on + 0.5 * (t_off - t_on))  # mid-plateau
     else:
         t_on = t_off = None
-        t_pulse = 0.0
-        t_end = pulse_w + pulse_span * mean_res
+        t_pulse = tm.get("t_pulse", 0.0)
+        t_end = tm.get("t_end", t_pulse + pulse_w + pulse_span * mean_res)
+
+    # --- flow: build from spec + event times (dips at transitions) -----------
+    events = []
+    if has_step:
+        events.append(t_off)                             # valve switch / shut-down
+    if has_pulse and t_pulse > PUMP_LAG_S:               # pulse during the plateau
+        events.append(t_pulse)
+    flow_profile = build_flow(exp.flow, setpoint, events=events)
+
     t = np.linspace(0.0, t_end, n_time)
 
     conc_uv_by, conc_cond_by = {}, {}
@@ -268,7 +336,7 @@ DEFAULT_CONFIG = os.path.join(
 
 _ALLOWED = {"name", "kind", "connection", "flow", "figure", "surface",
             "c_tracer", "loop_uL", "inject_at", "description", "xmax",
-            "species", "background"}
+            "species", "background", "timing"}
 
 
 def load_config(path: Optional[str] = None):

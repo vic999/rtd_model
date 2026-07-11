@@ -116,6 +116,38 @@ class Sawtooth(FlowProfile):
         return v if t.ndim else float(v)
 
 
+class RampWithDips(FlowProfile):
+    """
+    Ramp to a constant set-point, with a brief interruption (dip toward
+    ``dip_to``) at each event time.
+
+    Models the real instrument flow for a stepwise run: the pump ramps to the
+    set-point over ``lag`` seconds, holds constant, and dips sharply (a
+    triangular notch of full width ``dip_width``) at each valve-switch / tracer
+    event -- the paper's localized "saw-tooth at high flow", rather than a
+    continuous oscillation.
+    """
+
+    def __init__(self, setpoint, lag=6.0, events=(), dip_to=0.0,
+                 dip_width=6.0, t_start=0.0):
+        self.sp = float(setpoint)
+        self.lag = float(max(lag, 1e-9))
+        self.events = [float(e) for e in events]
+        self.dip_to = float(dip_to)
+        self.half = float(max(dip_width, 1e-9)) / 2.0
+        self.t_start = float(t_start)
+
+    def __call__(self, t):
+        t = np.asarray(t, float)
+        # start-up ramp 0 -> set-point over `lag`
+        v = self.sp * np.clip((t - self.t_start) / self.lag, 0.0, 1.0)
+        # triangular dip toward dip_to at each event (frac=1 at centre, 0 at edge)
+        for te in self.events:
+            frac = np.clip(1.0 - np.abs(t - te) / self.half, 0.0, 1.0)
+            v = v * (1.0 - frac) + self.dip_to * frac
+        return v if t.ndim else float(v)
+
+
 class FromData(FlowProfile):
     """Interpolate a measured flow trace (t in s, v in mL/min)."""
 

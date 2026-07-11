@@ -134,6 +134,30 @@ def test_multicomponent_opposite_sign():
     assert uv.max() > 10 * (uv[10] + 1e-9)
 
 
+def test_protocol_timing_override():
+    from rtd.experiments import Experiment, simulate
+    exp = Experiment(name="_", kind="step", connection="bypass", flow=10.0,
+                     c_tracer=0.05, timing={"t_on": 10, "t_off": 255, "t_end": 300})
+    r = simulate(exp, n_time=1200)
+    assert abs(r["t"][-1] - 300.0) < 1.0        # window pinned by t_end
+    # UV rises after t_on and falls after t_off (plateau spans the protocol)
+    uv = r["uv_mAU"]; t = r["t"]
+    assert uv[np.argmin(np.abs(t - 130))] > 0.9 * uv.max()   # mid-plateau high
+    assert uv[np.argmin(np.abs(t - 5))] < 0.1 * uv.max()     # before t_on low
+
+
+def test_event_driven_flow_dip():
+    from rtd.experiments import Experiment, simulate
+    exp = Experiment(name="_", kind="step", connection="bypass", flow=10.0,
+                     c_tracer=0.05, timing={"t_on": 10, "t_off": 255, "t_end": 300})
+    r = simulate(exp, n_time=1500)
+    t, f = r["t"], r["flow_mLmin"]
+    # constant ~set-point on the plateau, a dip toward 0 at the transition
+    assert abs(f[np.argmin(np.abs(t - 130))] - 10.0) < 0.5   # constant mid-run
+    assert f[np.argmin(np.abs(t - 255))] < 3.0               # dip at t_off
+    assert f.min() < 1.0                                     # reaches ~0
+
+
 def test_injection_location_routing():
     from rtd.equipment import build_train
     _, names_loop, _, _ = build_train("filter", surface_cm2=10, inject_at="Loop")

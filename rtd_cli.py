@@ -63,11 +63,13 @@ def cmd_list(args, experiments, defaults):
     w = max(len(e.name) for e in rows)
     print(f"{'name'.ljust(w)}  fig  kind   connection  flow(mL/min)  surf(cm2)  description")
     print("-" * 78)
+    from rtd.experiments import flow_setpoint
     for e in rows:
         surf = "-" if e.surface is None else str(e.surface)
         fig = "-" if e.figure is None else str(e.figure)
+        flow = flow_setpoint(e.flow)               # scalar, even if flow is a spec
         print(f"{e.name.ljust(w)}  {fig:>3}  {e.display_kind:<5}  {e.connection:<10}  "
-              f"{e.flow:>11}  {surf:>8}  {e.description}")
+              f"{flow:>11}  {surf:>8}  {e.description}")
     print(f"\n{len(rows)} experiment(s). Config: {args.config or 'experiments.yaml'}")
 
 
