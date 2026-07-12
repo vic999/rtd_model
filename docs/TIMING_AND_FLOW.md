@@ -109,6 +109,21 @@ flow: {type: from_data, csv: "run.csv"}           # replay the measured trace
 `from_data` (already available as `rtd.flow.FromData`, used by `compare_data.py`)
 is the highest-fidelity path: drive V1 with its real recorded flow.
 
+**Controlling the dips.** The interruption need not go all the way to 0, and can
+be switched off entirely, via three per-experiment fields:
+
+```yaml
+flow_dips: true       # (default) add interruption dips at transitions; false = none
+step_flow_dip: 0.0    # bottom flow (mL/min) of the step-off / valve-switch dip
+pulse_flow_dip: 2.5   # bottom flow (mL/min) of the pulse dip (e.g. V5: dip to 2.5, not 0)
+```
+
+Each event is an `(time, depth)` pair passed to `RampWithDips`, so different
+events can dip to different levels. For V5 the pulse fires essentially at
+step-off (`t_pulse≈t_off`), so both dips are set to 2.5 and merge into a single
+notch bottoming at 2.5. Setting `flow_dips: false` (e.g. for the V8
+approximation) removes the automatic shut-down dip so the plateau stays flat.
+
 ### Why event-driven
 
 - The paper's flow dips are caused by valve/tracer **events**, so tying them to

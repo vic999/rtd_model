@@ -134,6 +134,9 @@ class Experiment:
     species: Optional[list] = None  # multi-species; None -> single NaNO3 tracer
     background: Optional[dict] = None  # equilibration buffer added to single-tracer runs
     timing: Optional[dict] = None   # protocol times (t_on/t_off/t_end/t_pulse); None -> auto
+    flow_dips: bool = True          # add flow-interruption dips at transitions (high flow)
+    step_flow_dip: float = 0.0      # flow (mL/min) at the bottom of the step-off dip
+    pulse_flow_dip: float = 0.0     # flow (mL/min) at the bottom of the pulse dip
 
     @property
     def title(self) -> str:
@@ -264,11 +267,14 @@ def simulate(exp: Experiment, n_time: int = 1400,
         t_end = tm.get("t_end", t_pulse + pulse_w + pulse_span * mean_res)
 
     # --- flow: build from spec + event times (dips at transitions) -----------
+    # Each event is (time, depth): the flow dips to `depth` mL/min there.
+    # `flow_dips=False` suppresses them entirely (constant-plateau flow).
     events = []
-    if has_step:
-        events.append(t_off)                             # valve switch / shut-down
-    if has_pulse and t_pulse > PUMP_LAG_S:               # pulse during the plateau
-        events.append(t_pulse)
+    if exp.flow_dips:
+        if has_step:                                     # valve switch / shut-down
+            events.append((t_off, exp.step_flow_dip))
+        if has_pulse and t_pulse > PUMP_LAG_S:           # pulse during the plateau
+            events.append((t_pulse, exp.pulse_flow_dip))
     flow_profile = build_flow(exp.flow, setpoint, events=events)
 
     t = np.linspace(0.0, t_end, n_time)
@@ -336,7 +342,8 @@ DEFAULT_CONFIG = os.path.join(
 
 _ALLOWED = {"name", "kind", "connection", "flow", "figure", "surface",
             "c_tracer", "loop_uL", "inject_at", "description", "xmax",
-            "species", "background", "timing"}
+            "species", "background", "timing",
+            "flow_dips", "step_flow_dip", "pulse_flow_dip"}
 
 
 def load_config(path: Optional[str] = None):

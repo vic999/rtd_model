@@ -167,6 +167,31 @@ def test_event_driven_flow_dip():
     assert f.min() < 1.0                                     # reaches ~0
 
 
+def test_pulse_flow_dip_depth():
+    from rtd.experiments import Experiment, Species, simulate
+    exp = Experiment(name="_", connection="bypass", flow=10.0,
+                     pulse_flow_dip=2.5, step_flow_dip=2.5,
+                     timing={"t_on": 10, "t_off": 255, "t_end": 300, "t_pulse": 257},
+                     species=[Species(name="buffer", baseline=1.0),
+                              Species(name="NaNO3", step=0.05, pulse=0.5)])
+    r = simulate(exp, n_time=1500)
+    t, f = r["t"], r["flow_mLmin"]
+    notch = f[(t > 248) & (t < 266)]
+    assert notch.min() > 2.0        # dip bottoms near 2.5, not 0
+    assert notch.min() < 3.0
+
+
+def test_flow_dips_disabled():
+    from rtd.experiments import Experiment, simulate
+    exp = Experiment(name="_", kind="step", connection="bypass", flow=10.0,
+                     c_tracer=0.05, flow_dips=False,
+                     timing={"t_on": 10, "t_off": 255, "t_end": 300})
+    r = simulate(exp, n_time=1200)
+    t, f = r["t"], r["flow_mLmin"]
+    # no transition dip: flow stays at the set-point right through t_off
+    assert f[np.argmin(np.abs(t - 255))] > 9.5
+
+
 def test_injection_location_routing():
     from rtd.equipment import build_train
     _, names_loop, _, _ = build_train("filter", surface_cm2=10, inject_at="Loop")

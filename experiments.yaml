@@ -160,11 +160,15 @@ experiments:
     flow: 10.0
     surface: null
     description: "0.05 M step + 0.5 M pulse, bypass, 10 mL/min"
+    # pulse fires right at step-off (t_pulse~=t_off), so the two dips merge into
+    # one notch; keep both at 2.5 so the flow interruption bottoms at 2.5 (not 0)
+    pulse_flow_dip: 2.5
+    step_flow_dip: 2.5
     timing:
       t_on: 10
       t_off: 255
       t_end: 480
-      t_pulse: 260
+      t_pulse: 257
     species:
       - name: buffer
         baseline: 1.0
