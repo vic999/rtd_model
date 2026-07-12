@@ -76,15 +76,24 @@ experiments:
     c_tracer: 0.5
     description: "connector, 1 mL/min"
 
-  # C2-3 -- connector, 10 mL/min
+  # C2-3 -- connector, 10 mL/min (measured flow is a saw-tooth at high flow:
+  #         linear ramp ~0 -> ~15, sharp reset near 26 s, ramp up again -> ~8 @40 s)
   - name: C2-3
     figure: 3
     kind: pulse
     connection: connector
-    flow: 10.0
+    flow:
+      type: sawtooth
+      base: 0.0
+      peak: 15.0
+      period: 26.0
     surface: null
     c_tracer: 0.5
-    description: "connector, 10 mL/min"
+    description: "connector, 10 mL/min (saw-tooth flow)"
+    xmax: 40                    # paper panel spans 0-40 s (show the full saw-tooth)
+    timing:
+      t_pulse: 8                # injection ~8 s so the UV pulse peaks mid-panel
+      t_end: 40
 
   # C3-1 -- 3 cm2 virus filter, 0.35 mL/min
   - name: C3-1
